@@ -10,28 +10,28 @@ def load_dataset():
 
 
 def rename_columns(dataframe):
-    rename_dict = {
-        'Unnamed: 0': 'skladba',
-        'ritem': 'ritem_mean',
-        'Unnamed: 2': 'ritem_median',
-        'Unnamed: 3': 'ritem_std',
-        'harmonija': 'harmonija_mean',
-        'Unnamed: 5': 'harmonija_median',
-        'Unnamed: 6': 'harmonija_std',
-        'melodija': 'melodija_mean',
-        'Unnamed: 8': 'melodija_median',
-        'Unnamed: 9': 'melodija_std',
-        'globina_besedila': 'globina_besedila_mean',
-        'Unnamed: 11': 'globina_besedila_median',
-        'Unnamed: 12': 'globina_besedila_std',
-        'razumljivost_besedila': 'razumljivost_besedila_mean',
-        'Unnamed: 14': 'razumljivost_besedila_median',
-        'Unnamed: 15': 'razumljivost_besedila_std',
-        'kompleksnost_besedila': 'kompleksnost_besedila_mean',
-        'Unnamed: 17': 'kompleksnost_besedila_median',
-        'Unnamed: 18': 'kompleksnost_besedila_std'
+    cols = {
+        'Unnamed: 0': 'songs',
+        'ritem': 'rhythm_mean',
+        'Unnamed: 2': 'rhythm_median',
+        'Unnamed: 3': 'rhythm_std',
+        'harmonija': 'harmony_mean',
+        'Unnamed: 5': 'harmony_median',
+        'Unnamed: 6': 'harmony_std',
+        'melodija': 'melody_mean',
+        'Unnamed: 8': 'melody_median',
+        'Unnamed: 9': 'melody_std',
+        'globina_besedila': 'lyrics_depth_mean',
+        'Unnamed: 11': 'lyrics_depth_median',
+        'Unnamed: 12': 'lyrics_depth_std',
+        'razumljivost_besedila': 'lyrics_comprehensibility_mean',
+        'Unnamed: 14': 'lyrics_comprehensibility_median',
+        'Unnamed: 15': 'lyrics_comprehensibility_std',
+        'kompleksnost_besedila': 'lyrics_complexity_mean',
+        'Unnamed: 17': 'lyrics_complexity_median',
+        'Unnamed: 18': 'lyrics_complexity_std'
     }
-    dataframe = dataframe.rename(columns=rename_dict)
+    dataframe = dataframe.rename(columns=cols)
     # Drop the first two rows because they are not used for analysis and processing
     dataframe = dataframe.drop([0, 1])
 
@@ -49,4 +49,4 @@ if __name__ == '__main__':
 
     pd.set_option('display.max_columns', None)
     print(df.head())
-    #df.to_excel('dataframe.xlsx', index=False)
+    df.to_excel('dataframe.xlsx', index=True)
