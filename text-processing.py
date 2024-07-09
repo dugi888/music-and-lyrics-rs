@@ -3,48 +3,44 @@ from sklearn.feature_extraction.text import TfidfVectorizer
 from nltk.tokenize import word_tokenize
 from nltk.corpus import stopwords
 from nltk.stem import WordNetLemmatizer
+from nltk import PorterStemmer
+
 
 # HAD TO DOWNLOAD THIS FOR THE FIRST TIME
-#nltk.download('punkt')
-#nltk.download('stopwords')
-#nltk.download('wordnet')
+# nltk.download('punkt')
+# nltk.download('stopwords')
+# nltk.download('wordnet')
 
-with open("song-lyrics/Amy_Winehouse-Rehab.txt", "r") as file:
-    dna = file.read().replace("\n", " ")
-
-def textProcess():
-    # Example text
-    text = "This is an example sentence. This sentence is for TF-IDF example."
-    with open("song-lyrics/Amy_Winehouse-Rehab.txt", "r") as file:
-        text = file.read().replace("\n", " ")
-    # Text preprocessing
-    tokens = word_tokenize(text)
-    tokens = [word.lower() for word in tokens]
-    tokens = [word for word in tokens if word.isalnum()]
-
-    # Removing stopwords
-    stop_words = set(stopwords.words('english'))
-    tokens = [word for word in tokens if word not in stop_words]
-
-    # Lemmatizer
+def preprocess_lyrics(lyrics, use_stemming=True):
+    stemmer = PorterStemmer()
     lemmatizer = WordNetLemmatizer()
-    tokens = [lemmatizer.lemmatize(word) for word in tokens]
 
-    # Join tokens back into string
-    preprocessed_text = " ".join(tokens)
+    tokens = word_tokenize(lyrics)
+    if use_stemming:
+        processed_tokens = [stemmer.stem(token) for token in tokens]
+    else:
+        processed_tokens = [lemmatizer.lemmatize(token) for token in tokens]
+    return ' '.join(processed_tokens)
 
-    # List of documents (example with one document)
-    documents = [preprocessed_text]
 
-    # TF-IDF Vectorizer
-    vectorizer = TfidfVectorizer()
-    tfidf_matrix = vectorizer.fit_transform(documents)
+def calculate_tfidf(df):
+    # Preprocess text
+    df['Processed_Lyrics'] = df['Lyrics'].apply(
+        lambda x: preprocess_lyrics(x, use_stemming=True))  # True - stemmer, False - lemmatizer
 
-    # Convert to DataFrame
-    feature_names = vectorizer.get_feature_names_out()
-    dense = tfidf_matrix.todense()
-    dense_list = dense.tolist()
-    df = pd.DataFrame(dense_list, columns=feature_names)
-    #df.to_excel('testDF.xlsx', index=False)
-    print(df)
+    # Initialize the TF-IDF Vectorizer
+    tfidf_vectorizer = TfidfVectorizer()
 
+    # Fit and transform the lyrics
+    tfidf_matrix = tfidf_vectorizer.fit_transform(df['Processed_Lyrics'])
+
+    # Create a DataFrame from the TF-IDF matrix
+    tfidf_df = pd.DataFrame(tfidf_matrix.toarray(), columns=tfidf_vectorizer.get_feature_names_out())
+
+    # Combine the original DataFrame with the TF-IDF DataFrame
+    df_combined = pd.concat([df, tfidf_df], axis=1)
+
+    # Replace 0 with NaN
+    df_combined.replace(0, pd.NA, inplace=True)
+    # df_combined.to_excel('testDF.xlsx', index=False)
+    # print(df_combined)

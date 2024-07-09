@@ -3,10 +3,6 @@ import json
 import requests
 
 
-def read_excel():
-    return pd.read_excel("./dataframe.xlsx")
-
-
 def create_url_link(artist_name, song_title):
     return ('https://api.lyrics.ovh/v1/' + artist_name.replace(' ', '%20') + '/' + song_title
             .replace(' ', '%20')
@@ -39,7 +35,7 @@ def clean_names(text):
 if __name__ == '__main__':
     print("Loading dataset\n")
     lyrics_df = pd.DataFrame(columns=["Song", "Lyrics"])
-    df = read_excel()
+    df = pd.read_excel("./dataframe.xlsx")
     error_songs = []
     print("Fetching lyrics\n")
     for song in df['songs']:
