@@ -35,7 +35,7 @@ def clean_names(text):
 if __name__ == '__main__':
     print("Loading dataset\n")
     lyrics_df = pd.DataFrame(columns=["Song", "Lyrics"])
-    df = pd.read_excel("./dataframe.xlsx")
+    df = pd.read_excel("output-tables/skladba-dataframe-cleaned.xlsx")
     error_songs = []
     print("Fetching lyrics\n")
     for song in df['songs']:
@@ -48,5 +48,5 @@ if __name__ == '__main__':
         else:
             error_songs.append(song)
     print(len(error_songs))
-    lyrics_df.to_excel('lyrics_output.xlsx', index=True)
+    lyrics_df.to_excel('output-tables/lyrics_output.xlsx', index=True)
     print(error_songs)

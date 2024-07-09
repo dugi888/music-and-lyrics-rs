@@ -162,7 +162,5 @@ cython_debug/
 .idea/*
 
 # Other files
-tester.py
-testing_singles.py
-dataframe.xlsx
-testDF.xlsx
+tester-classes/*
+output-tables/*

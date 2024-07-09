@@ -49,4 +49,4 @@ if __name__ == '__main__':
 
     pd.set_option('display.max_columns', None)
     print(df.head())
-    df.to_excel('dataframe.xlsx', index=True)
+    df.to_excel('output-tables/skladba-dataframe-cleaned.xlsx', index=True)
