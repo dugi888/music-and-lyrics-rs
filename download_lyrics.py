@@ -38,7 +38,7 @@ class LyricsDownloader(object):
     def run(self):
         print("Loading dataset\n")
         lyrics_df = pd.DataFrame(columns=["songs", "lyrics"])
-        df = pd.read_excel("output-tables/skladba-dataframe-cleaned.xlsx")
+        df = pd.read_excel("output_tables/skladba_dataframe_cleaned.xlsx")
         error_songs = []
         print("Fetching lyrics\n")
         for song in df['songs']:
@@ -51,7 +51,7 @@ class LyricsDownloader(object):
             else:
                 error_songs.append(song)
         print(len(error_songs))
-        lyrics_df.to_excel('output-tables/lyrics_output.xlsx', index=True)
+        lyrics_df.to_excel('output_tables/lyrics_output.xlsx', index=True)
         print(error_songs)
 
 

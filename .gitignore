@@ -162,5 +162,5 @@ cython_debug/
 .idea/*
 
 # Other files
-tester-classes/*
-output-tables/*
+tester_classes/*
+output_tables/*

@@ -3,6 +3,7 @@ import os
 import download_lyrics as dl
 import text_processing as tp
 
+
 class LyricsProcessor:
     def __init__(self, use_stemming=True, n_components=20):
         self.text_processor = tp.TextProcessing(use_stemming, n_components)
@@ -49,7 +50,7 @@ class LyricsProcessor:
 
     @staticmethod
     def create_output_dir():
-        directory = "output-tables"
+        directory = "output_tables"
         # Parent Directory path
         parent_dir = "./"
         # Path
@@ -57,13 +58,13 @@ class LyricsProcessor:
         os.mkdir(path)
 
     def start_task_chain(self):
-        if not os.path.isdir('output-tables'):
+        if not os.path.isdir('output_tables'):
             self.create_output_dir()
         print("Getting native dataframe")
         df = self.load_dataset()
         df = self.rename_columns(df)
         pd.set_option('display.max_columns', None)
-        df.to_excel('output-tables/skladba-dataframe-cleaned.xlsx', index=True)
+        df.to_excel('output_tables/skladba_dataframe_cleaned.xlsx', index=True)
 
         print("Downloading lyrics")
         self.download_lyrics.run()
@@ -76,9 +77,7 @@ class LyricsProcessor:
 
 
 if __name__ == '__main__':
-    #print("Starting chain")
+    # print("Starting chain")
     #LyricsProcessor().start_task_chain()
 
     LyricsProcessor().debugger()
-
-
