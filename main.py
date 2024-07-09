@@ -1,4 +1,5 @@
 import pandas as pd
+import os
 
 
 def load_dataset():
@@ -40,13 +41,19 @@ def rename_columns(dataframe):
     return dataframe
 
 
+def create_output_dir():
+    directory = "output-tables"
+    # Parent Directory path
+    parent_dir = "./"
+    # Path
+    path = os.path.join(parent_dir, directory)
+    os.mkdir(path)
+
+
 if __name__ == '__main__':
+    if not os.path.isdir('output-tables'):
+        create_output_dir()
     df = load_dataset()
     df = rename_columns(df)
-
-
-
-
     pd.set_option('display.max_columns', None)
-    print(df.head())
     df.to_excel('output-tables/skladba-dataframe-cleaned.xlsx', index=True)
