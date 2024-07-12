@@ -2,11 +2,11 @@ import pandas as pd
 from openpyxl.reader.excel import load_workbook
 from sklearn.feature_extraction.text import TfidfVectorizer
 from nltk.tokenize import word_tokenize
-from sklearn.model_selection import train_test_split, KFold
+from sklearn.model_selection import train_test_split, KFold, GridSearchCV
 from sklearn.linear_model import LinearRegression, LogisticRegression, SGDClassifier, RidgeClassifier, SGDRegressor
 from sklearn.tree import DecisionTreeRegressor, DecisionTreeClassifier, DecisionTreeRegressor
 from sklearn.ensemble import RandomForestRegressor, GradientBoostingRegressor, ExtraTreesRegressor
-from sklearn.metrics import root_mean_squared_error, r2_score
+from sklearn.metrics import root_mean_squared_error, r2_score, accuracy_score
 from nltk.stem import WordNetLemmatizer
 from nltk import PorterStemmer
 from sklearn import decomposition
@@ -172,6 +172,92 @@ class TextProcessing:
         # print(f"Final Test R^2 Score: {final_test_r2:.10f}")
         # print("\n\n")
 
+    def find_optimal_hyperparameters(self, df, column_to_predict, model, param_grid):
+        columns_to_select = [column_to_predict] + [f'PC{i}' for i in range(1, 21)]
+        selected_df = df[columns_to_select]
+
+        # Split dataset into features (X) and target (y)
+        X = selected_df.drop(columns=[column_to_predict])  # Features
+        y = selected_df[column_to_predict]  # Target
+
+        grid_search = GridSearchCV(estimator=model, param_grid=param_grid, cv=5, scoring='neg_root_mean_squared_error')
+        grid_search.fit(X, y)
+
+        # Print the best parameters and best score
+        best_params = (f"Best parameters for {type(model).__name__} when predicting {column_to_predict}:\n" +
+                       str(grid_search.best_params_) + '\n')
+        best_result = f"Best neg_root_mean_squared_error score: {grid_search.best_score_}\n"
+
+        # Check if file exists
+        filename = 'output_tables/hyper_parameters_for_regressors.txt'
+
+        with open(filename, 'a') as file:
+            file.write(best_params + best_result + "\n\n")
+
+        print(f"Best parameters for {type(model).__name__} when predicting {column_to_predict}:")
+        print(grid_search.best_params_)
+        print(f"Best neg_root_mean_squared_error score: {grid_search.best_score_}\n")
+
+    def evaluation_classifier(self, df, column_to_predict, model, test_size=0.2):
+
+        # Selecting relevant columns
+        columns_to_select = [column_to_predict] + [f'PC{i}' for i in range(1, 21)]
+        selected_df = df[columns_to_select]
+
+        # Split dataset into features (X) and target (y)
+        X = selected_df.drop(columns=[column_to_predict])  # Features
+        y = selected_df[column_to_predict]  # Target
+
+        # Split data into training and testing sets
+        X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=test_size, random_state=42)
+
+        # Initialize KFold cross-validation (10 folds)
+        kf = KFold(n_splits=10, shuffle=True, random_state=42)
+
+        # Perform cross-validation on the training set
+        train_scores = []
+        test_scores = []
+
+        for train_index, test_index in kf.split(X_train):
+            X_train_fold, X_val_fold = X_train.iloc[train_index], X_train.iloc[test_index]
+            y_train_fold, y_val_fold = y_train.iloc[train_index], y_train.iloc[test_index]
+
+            # Fit the model on the training fold
+            model.fit(X_train_fold, y_train_fold)
+
+            # Predict and evaluate on the training fold
+            y_train_pred = model.predict(X_train_fold)
+            train_score = accuracy_score(y_train_fold, y_train_pred)
+            train_scores.append(train_score)
+
+            # Predict and evaluate on the validation fold
+            y_val_pred = model.predict(X_val_fold)
+            test_score = accuracy_score(y_val_fold, y_val_pred)
+            test_scores.append(test_score)
+
+        # Evaluate on the test set (final evaluation)
+        model.fit(X_train, y_train)
+        y_pred = model.predict(X_test)
+        final_test_score = accuracy_score(y_test, y_pred)
+
+        # Calculate average training and validation scores
+        avg_train_score = sum(train_scores) / len(train_scores)
+        avg_test_score = sum(test_scores) / len(test_scores)
+
+        # Prepare results DataFrame
+        results_df = pd.DataFrame({
+            'Feature': column_to_predict,
+            'Training Accuracy': [avg_train_score],
+            'Validation Accuracy': [avg_test_score],
+            'Test Accuracy': [final_test_score]
+        })
+
+        # Print results to Excel
+        excel_filename = 'output_tables/model_evaluation_classifier.xlsx'
+        model_name = type(model).__name__
+
+        self.append_df_to_excel(excel_filename, results_df, model_name)
+
     @staticmethod
     def merge_dataframes(pca_df, original_df):
         merged_df = pd.merge(original_df, pca_df, on="songs", how="inner")
@@ -226,12 +312,54 @@ class TextProcessing:
                                 random_state=42),
             DecisionTreeRegressor(max_depth=None, min_samples_split=2, min_samples_leaf=1, random_state=42),
             LinearRegression()
-            # LogisticRegression(C=1.0, penalty='l2', random_state=42),
-            # SGDRegressor(alpha=0.0001, penalty='l2', loss='squared_loss', random_state=42),
-            # RidgeClassifier(alpha=1.0, random_state=42),
-            # SGDClassifier(alpha=0.0001, penalty='l2', loss='log', random_state=42),
-            # DecisionTreeClassifier(max_depth=None, min_samples_split=2, min_samples_leaf=1, random_state=42)
+
         ]
+
+        classifiers = [
+            LogisticRegression(C=1.0, penalty='l2', random_state=42),
+            SGDRegressor(alpha=0.0001, penalty='l2', loss='squared_loss', random_state=42),
+            RidgeClassifier(alpha=1.0, random_state=42),
+            SGDClassifier(alpha=0.0001, penalty='l2', loss='log', random_state=42),
+            DecisionTreeClassifier(max_depth=None, min_samples_split=2, min_samples_leaf=1, random_state=42)]
+
+        param_grids = [
+            {  # RandomForestRegressor parameters
+                'n_estimators': [50, 100, 200],
+                'max_depth': [None, 10, 20],
+                'min_samples_split': [2, 5],
+                'min_samples_leaf': [1, 2]
+            },
+            {  # GradientBoostingRegressor parameters
+                'n_estimators': [50, 100, 200],
+                'learning_rate': [0.05, 0.1, 0.2],
+                'max_depth': [3, 5],
+                'min_samples_split': [2, 5],
+                'min_samples_leaf': [1, 2]
+            },
+            {  # ExtraTreesRegressor parameters
+                'n_estimators': [50, 100, 200],
+                'max_depth': [None, 10, 20],
+                'min_samples_split': [2, 5],
+                'min_samples_leaf': [1, 2]
+            },
+            {  # DecisionTreeRegressor parameters
+                'max_depth': [None, 10, 20],
+                'min_samples_split': [2, 5],
+                'min_samples_leaf': [1, 2]
+            },
+            {  # LinearRegression has no hyperparameters to tune
+                'fit_intercept': [True, False]
+            }
+        ]
+
+        for model, param_grid in zip(models, param_grids):
+            for column in columns_to_predict:
+                self.find_optimal_hyperparameters(merged, column, model, param_grid)
+
         for model in models:
             for column in columns_to_predict:
                 self.evaluation(merged, column, model)
+
+        # for model in models:
+        #     for column in columns_to_predict:
+        #         self.evaluation_classifier(merged, column, model)
