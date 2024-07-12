@@ -1,12 +1,12 @@
 import pandas as pd
+from openpyxl.reader.excel import load_workbook
 from sklearn.feature_extraction.text import TfidfVectorizer
 from nltk.tokenize import word_tokenize
 from sklearn.model_selection import train_test_split, KFold
-from sklearn.model_selection import cross_val_predict
 from sklearn.linear_model import LinearRegression, LogisticRegression, SGDClassifier, RidgeClassifier, SGDRegressor
 from sklearn.tree import DecisionTreeRegressor, DecisionTreeClassifier, DecisionTreeRegressor
 from sklearn.ensemble import RandomForestRegressor, GradientBoostingRegressor, ExtraTreesRegressor
-from sklearn.metrics import mean_squared_error, r2_score
+from sklearn.metrics import root_mean_squared_error, r2_score
 from nltk.stem import WordNetLemmatizer
 from nltk import PorterStemmer
 from sklearn import decomposition
@@ -62,7 +62,30 @@ class TextProcessing:
         merged_df = pd.merge(original_df, pca_df, on="songs", how="inner")
         return merged_df
 
-    def regression_algorithm(self, df, column_to_predict, model, test_size=0.2):
+    def append_df_to_excel(self, filename, df, sheet_name):
+        try:
+            # Load the existing workbook
+            book = load_workbook(filename)
+            if sheet_name in book.sheetnames:
+                # Load existing sheet into a DataFrame
+                existing_df = pd.read_excel(filename, sheet_name=sheet_name)
+                # Append the new data without column names
+                combined_df = pd.concat([existing_df, df], ignore_index=True)
+            else:
+                # If the sheet does not exist, just use the new DataFrame
+                combined_df = df
+
+            # Write to Excel
+            with pd.ExcelWriter(filename, engine='openpyxl', mode='a') as writer:
+                if sheet_name in writer.book.sheetnames:
+                    writer.book.remove(writer.book[sheet_name])
+                combined_df.to_excel(writer, sheet_name=sheet_name, index=False)
+        except FileNotFoundError:
+            # If the file doesn't exist, create a new one and write the DataFrame
+            with pd.ExcelWriter(filename, engine='openpyxl') as writer:
+                df.to_excel(writer, sheet_name=sheet_name, index=False)
+
+    def evaluation(self, df, column_to_predict, model, test_size=0.2):
 
         # Selecting relevant columns
         columns_to_select = [column_to_predict] + [f'PC{i}' for i in range(1, 21)]
@@ -98,16 +121,16 @@ class TextProcessing:
             y_train_pred = model.predict(X_train_fold)
 
             # Evaluate training fold
-            train_mse = mean_squared_error(y_train_fold, y_train_pred)
+            train_rmse = root_mean_squared_error(y_train_fold, y_train_pred)
             train_r2 = r2_score(y_train_fold, y_train_pred)
-            train_mses.append(train_mse)
+            train_mses.append(train_rmse)
             train_r2s.append(train_r2)
 
             # Predict on the validation fold (test set for cross-validation)
             y_val_pred = model.predict(X_val_fold)
 
             # Evaluate validation fold
-            test_mse = mean_squared_error(y_val_fold, y_val_pred)
+            test_mse = root_mean_squared_error(y_val_fold, y_val_pred)
             test_r2 = r2_score(y_val_fold, y_val_pred)
             test_mses.append(test_mse)
             test_r2s.append(test_r2)
@@ -115,23 +138,39 @@ class TextProcessing:
         # Evaluate on the test set (final evaluation)
         model.fit(X_train, y_train)
         y_pred = model.predict(X_test)
-        final_test_mse = mean_squared_error(y_test, y_pred)
+        final_test_rmse = root_mean_squared_error(y_test, y_pred)
         final_test_r2 = r2_score(y_test, y_pred)
 
-        # Print results
+        # Generating dataframe from results
+        # Create DataFrame
+        results_df = pd.DataFrame({
+            'Feature': column_to_predict,
+            'Training RMSE': [sum(train_mses) / len(train_mses)],
+            'Training R^2': [sum(train_r2s) / len(train_r2s)],
+            'Test RMSE': final_test_rmse,
+            'Test R^2': final_test_r2
+        })
 
+        # Print to excel
         model_name = type(model).__name__
-        print(column_to_predict, " & ", model_name, '\n --------------------------- \n')
-        print("Training Set:")
-        print(f"Mean Squared Error (MSE): {sum(train_mses) / len(train_mses):.10f}")
-        print(f"R^2 Score: {sum(train_r2s) / len(train_r2s):.10f}")
-        print("\nCross-Validation (Validation Set):")
-        print(f"Mean Cross-Validation MSE: {sum(test_mses) / len(test_mses):.10f}")
-        print(f"Mean Cross-Validation R^2 Score: {sum(test_r2s) / len(test_r2s):.10f}")
-        print("\nTest Set (Final Evaluation):")
-        print(f"Final Test MSE: {final_test_mse:.10f}")
-        print(f"Final Test R^2 Score: {final_test_r2:.10f}")
-        print("\n\n")
+
+        # Define the path to the existing Excel file
+        excel_filename = 'output_tables/model_evaluation.xlsx'
+
+        self.append_df_to_excel(excel_filename, results_df, model_name)
+
+        # Print results
+        # print(column_to_predict, " & ", model_name, '\n --------------------------- \n')
+        # print("Training Set:")
+        # print(f"Root Mean Squared Error (RMSE): {sum(train_mses) / len(train_mses):.10f}")
+        # print(f"R^2 Score: {sum(train_r2s) / len(train_r2s):.10f}")
+        # print("\nCross-Validation (Validation Set):")
+        # print(f"Root Mean Cross-Validation RMSE: {sum(test_mses) / len(test_mses):.10f}")
+        # print(f"Mean Cross-Validation R^2 Score: {sum(test_r2s) / len(test_r2s):.10f}")
+        # print("\nTest Set (Final Evaluation):")
+        # print(f"Final Test RMSE: {final_test_rmse:.10f}")
+        # print(f"Final Test R^2 Score: {final_test_r2:.10f}")
+        # print("\n\n")
 
     @staticmethod
     def merge_dataframes(pca_df, original_df):
@@ -177,6 +216,7 @@ class TextProcessing:
 
         columns_to_predict = ['lyrics_complexity_mean', 'lyrics_comprehensibility_mean', 'lyrics_complexity_mean']
 
+        # Models that are being used in ML algorithm
         models = [
             RandomForestRegressor(n_estimators=100, max_depth=None, min_samples_split=2, min_samples_leaf=1,
                                   random_state=42),
@@ -192,7 +232,6 @@ class TextProcessing:
             # SGDClassifier(alpha=0.0001, penalty='l2', loss='log', random_state=42),
             # DecisionTreeClassifier(max_depth=None, min_samples_split=2, min_samples_leaf=1, random_state=42)
         ]
-
-        for column in columns_to_predict:
-            for model in models:
-                self.regression_algorithm(merged, column, model)
+        for model in models:
+            for column in columns_to_predict:
+                self.evaluation(merged, column, model)
