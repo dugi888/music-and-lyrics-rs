@@ -4,13 +4,16 @@ from sklearn.feature_extraction.text import TfidfVectorizer
 from nltk.tokenize import word_tokenize
 from sklearn.model_selection import train_test_split, KFold, GridSearchCV
 from sklearn.linear_model import LinearRegression, LogisticRegression, SGDClassifier, RidgeClassifier, SGDRegressor
-from sklearn.tree import DecisionTreeRegressor, DecisionTreeClassifier, DecisionTreeRegressor
-from sklearn.ensemble import RandomForestRegressor, GradientBoostingRegressor, ExtraTreesRegressor
-from sklearn.metrics import root_mean_squared_error, r2_score, accuracy_score
+from sklearn.neighbors import KNeighborsClassifier
+from sklearn.svm import SVC, SVR
+from sklearn.tree import  DecisionTreeClassifier, DecisionTreeRegressor
+from sklearn.ensemble import RandomForestRegressor, GradientBoostingRegressor, ExtraTreesRegressor, \
+    RandomForestClassifier
+from sklearn.metrics import root_mean_squared_error, r2_score, accuracy_score, mean_squared_error, mean_absolute_error
 from nltk.stem import WordNetLemmatizer
-from nltk import PorterStemmer
+from nltk import PorterStemmer, NaiveBayesClassifier
 from sklearn import decomposition
-
+import utils
 
 # HAD TO DOWNLOAD THIS FOR THE FIRST TIME
 # nltk.download('punkt')
@@ -50,7 +53,7 @@ class TextProcessing:
         df_combined = pd.concat([df, tfidf_df], axis=1)
 
         # Save the combined DataFrame to an Excel file
-        df_combined.to_excel('output_tables/tf_idf_dataframe.xlsx', index=False)
+        df_combined.to_excel(utils.get_output_directory_path()+'/tf_idf_dataframe.xlsx', index=False)
         return df_combined
 
     def dimension_reduction(self, df):
@@ -105,8 +108,12 @@ class TextProcessing:
         kf = KFold(n_splits=10, shuffle=True, random_state=42)
 
         # Perform cross-validation on the training set
+        train_rmses = []
+        train_maes = []
         train_mses = []
         train_r2s = []
+        test_rmses = []
+        test_maes = []
         test_mses = []
         test_r2s = []
 
@@ -122,16 +129,24 @@ class TextProcessing:
 
             # Evaluate training fold
             train_rmse = root_mean_squared_error(y_train_fold, y_train_pred)
+            train_mae = mean_absolute_error(y_train_fold, y_train_pred)
+            train_mse = mean_squared_error(y_train_fold, y_train_pred)
             train_r2 = r2_score(y_train_fold, y_train_pred)
-            train_mses.append(train_rmse)
+            train_rmses.append(train_rmse)
+            train_maes.append(train_mae)
+            train_mses.append(train_mse)
             train_r2s.append(train_r2)
 
             # Predict on the validation fold (test set for cross-validation)
             y_val_pred = model.predict(X_val_fold)
 
             # Evaluate validation fold
-            test_mse = root_mean_squared_error(y_val_fold, y_val_pred)
+            test_rmse = root_mean_squared_error(y_val_fold, y_val_pred)
+            test_mae = mean_absolute_error(y_val_fold, y_val_pred)
+            test_mse = mean_squared_error(y_val_fold, y_val_pred)
             test_r2 = r2_score(y_val_fold, y_val_pred)
+            test_rmses.append(test_rmse)
+            test_maes.append(test_mae)
             test_mses.append(test_mse)
             test_r2s.append(test_r2)
 
@@ -139,23 +154,28 @@ class TextProcessing:
         model.fit(X_train, y_train)
         y_pred = model.predict(X_test)
         final_test_rmse = root_mean_squared_error(y_test, y_pred)
+        final_test_mae = mean_absolute_error(y_test, y_pred)
+        final_test_mse = mean_squared_error(y_test, y_pred)
         final_test_r2 = r2_score(y_test, y_pred)
 
         # Generating dataframe from results
-        # Create DataFrame
         results_df = pd.DataFrame({
-            'Feature': column_to_predict,
-            'Training RMSE': [sum(train_mses) / len(train_mses)],
+            'Feature': [column_to_predict],
+            'Training RMSE': [sum(train_rmses) / len(train_rmses)],
+            'Training MAE': [sum(train_maes) / len(train_maes)],
+            'Training MSE': [sum(train_mses) / len(train_mses)],
             'Training R^2': [sum(train_r2s) / len(train_r2s)],
-            'Test RMSE': final_test_rmse,
-            'Test R^2': final_test_r2
+            'Test RMSE': [final_test_rmse],
+            'Test MAE': [final_test_mae],
+            'Test MSE': [final_test_mse],
+            'Test R^2': [final_test_r2]
         })
 
         # Print to excel
         model_name = type(model).__name__
 
         # Define the path to the existing Excel file
-        excel_filename = 'output_tables/model_evaluation.xlsx'
+        excel_filename = utils.get_output_directory_path()+'/model_evaluation.xlsx'
 
         self.append_df_to_excel(excel_filename, results_df, model_name)
 
@@ -189,7 +209,7 @@ class TextProcessing:
         best_result = f"Best neg_root_mean_squared_error score: {grid_search.best_score_}\n"
 
         # Check if file exists
-        filename = 'output_tables/hyper_parameters_for_regressors.txt'
+        filename = utils.get_output_directory_path()+'/hyper_parameters_for_regressors.txt'
 
         with open(filename, 'a') as file:
             file.write(best_params + best_result + "\n\n")
@@ -253,7 +273,7 @@ class TextProcessing:
         })
 
         # Print results to Excel
-        excel_filename = 'output_tables/model_evaluation_classifier.xlsx'
+        excel_filename = utils.get_output_directory_path()+'/model_evaluation_classifier.xlsx'
         model_name = type(model).__name__
 
         self.append_df_to_excel(excel_filename, results_df, model_name)
@@ -261,7 +281,7 @@ class TextProcessing:
     @staticmethod
     def merge_dataframes(pca_df, original_df):
         merged_df = pd.merge(original_df, pca_df, on="songs", how="inner")
-        merged_df.to_excel('output_tables/merged_dataframe.xlsx', index=False)
+        merged_df.to_excel(utils.get_output_directory_path()+'/merged_dataframe.xlsx', index=False)
         return merged_df
 
     @staticmethod
@@ -272,13 +292,18 @@ class TextProcessing:
             return song  # return as is if no ':' found
 
     def run(self):
+        print("Processing lyrics!\n")
+
+        print("Loading dataset!\n")
         # Read input DataFrame
-        df = pd.read_excel("output_tables/lyrics_output.xlsx")
+        df = pd.read_excel(utils.get_output_directory_path()+'/lyrics_output_genius.xlsx')
 
         # Calculate TF-IDF
+        print("Calculating TF-IDF!\n")
         full_df = self.calculate_tfidf(df)
 
         # Perform dimension reduction
+        print("Reducing dimensions!\n")
         send_df = full_df.iloc[:, 4:]  # Selecting all columns from index 4 to the end
         pca_data, pca = self.dimension_reduction(send_df)
 
@@ -287,20 +312,20 @@ class TextProcessing:
 
         # Include the original song titles in the PCA DataFrame
         pca_df = pd.concat([full_df[['songs']], pca_df], axis=1)
-        pca_df.to_excel('output_tables/PCA_dataframe.xlsx', index=False)
+        pca_df.to_excel(utils.get_output_directory_path()+'/PCA_dataframe.xlsx', index=False)
 
         # Prediction
 
-        pca_df = pd.read_excel("output_tables/PCA_dataframe.xlsx")
+        pca_df = pd.read_excel(utils.get_output_directory_path()+'/PCA_dataframe.xlsx')
 
-        original_df = pd.read_excel("output_tables/skladba_dataframe_cleaned.xlsx",
+        original_df = pd.read_excel(utils.get_output_directory_path()+'/skladba_dataframe_cleaned.xlsx',
                                     converters={'songs': self.extract_song_name})
         lyrics_columns = [col for col in original_df.columns if 'lyrics' in col.lower() or 'songs' in col.lower()]
 
         original_df_parameter = original_df[lyrics_columns]
         merged = self.merge_dataframes(pca_df, original_df_parameter)
 
-        columns_to_predict = ['lyrics_complexity_mean', 'lyrics_comprehensibility_mean', 'lyrics_complexity_mean']
+        columns_to_predict = ['lyrics_complexity_mean', 'lyrics_comprehensibility_mean', 'lyrics_depth_mean']
 
         # Models that are being used in ML algorithm
         models = [
@@ -311,17 +336,22 @@ class TextProcessing:
             ExtraTreesRegressor(n_estimators=100, max_depth=None, min_samples_split=2, min_samples_leaf=1,
                                 random_state=42),
             DecisionTreeRegressor(max_depth=None, min_samples_split=2, min_samples_leaf=1, random_state=42),
-            LinearRegression()
+            LinearRegression(),
+            SVR(kernel='rbf'),
+            # SGDRegressor(alpha=0.0001, penalty='l2', loss='squared_loss', random_state=42) currently not working
 
         ]
 
         classifiers = [
+            SVC(kernel='linear'),
+            RandomForestClassifier(n_estimators=100, max_depth=None),
             LogisticRegression(C=1.0, penalty='l2', random_state=42),
-            SGDRegressor(alpha=0.0001, penalty='l2', loss='squared_loss', random_state=42),
             RidgeClassifier(alpha=1.0, random_state=42),
             SGDClassifier(alpha=0.0001, penalty='l2', loss='log', random_state=42),
-            DecisionTreeClassifier(max_depth=None, min_samples_split=2, min_samples_leaf=1, random_state=42)]
-
+            DecisionTreeClassifier(max_depth=None, min_samples_split=2, min_samples_leaf=1, random_state=42),
+            KNeighborsClassifier(n_neighbors=10) # Not sure for parameters
+            # NaiveBayesClassifier() How to implement this and fix parameters.
+        ]
         param_grids = [
             {  # RandomForestRegressor parameters
                 'n_estimators': [50, 100, 200],
@@ -352,14 +382,17 @@ class TextProcessing:
             }
         ]
 
-        for model, param_grid in zip(models, param_grids):
-            for column in columns_to_predict:
-                self.find_optimal_hyperparameters(merged, column, model, param_grid)
+        # print("Hyperparameters tuning!")
+        #for model, param_grid in zip(models, param_grids):
+        #    for column in columns_to_predict:
+        #        self.find_optimal_hyperparameters(merged, column, model, param_grid)
 
+        print("Evaluating Regressors!\n")
         for model in models:
             for column in columns_to_predict:
                 self.evaluation(merged, column, model)
 
+        # print("Evaluating Classifiers!\n")
         # for model in models:
         #     for column in columns_to_predict:
         #         self.evaluation_classifier(merged, column, model)
