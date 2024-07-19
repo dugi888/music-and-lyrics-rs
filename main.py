@@ -1,15 +1,16 @@
 import pandas as pd
 import os
-from lyrics import download_lyrics as dl, text_processing as tp
+from lyrics import download_lyrics as dl, process_lyrics as pl
 import utils
-from audio import download_song_data as song_features
+from audio import download_song_data as dsa, process_audio as pa
 
 
-class LyricsProcessor:
+class Main:
     def __init__(self, use_stemming=True, n_components=20):
-        self.text_processor = tp.TextProcessing(use_stemming, n_components)
+        self.text_processor = pl.TextProcessing(use_stemming, n_components)
         self.download_lyrics = dl.LyricsDownloader()
-        self.song_features = song_features.SpotifyClient()
+        self.song_features = dsa.SpotifyClient()
+        self.audio_processor = pa.AudioProcessor()
 
     def start_task_chain(self):
         if not os.path.isdir('output_tables'):
@@ -27,10 +28,12 @@ class LyricsProcessor:
         self.song_features.run()
 
     def debugger(self):
-        self.song_features.run()
+        # self.song_features.run()
+        # self.text_processor.run()
+        pa.AudioProcessor().run()
 
 
 if __name__ == '__main__':
-     #print("Starting chain")
-     #LyricsProcessor().start_task_chain()
-    LyricsProcessor().debugger()
+    # print("Starting chain")
+    # LyricsProcessor().start_task_chain()
+    Main().debugger()

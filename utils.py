@@ -94,3 +94,9 @@ def get_output_directory_path(directory_name="output_tables", start_dir='.'):
             break
         start_path = start_path.parent
     return None
+
+
+def merge_dataframes(first_df, second_df, output_file_name="merged_dataframe.xlsx", column_name="songs", how='inner'):
+    merged_df = pd.merge(first_df, second_df, on=column_name, how=how)
+    merged_df.to_excel(get_output_directory_path() + '/' + output_file_name, index=False)
+    return merged_df

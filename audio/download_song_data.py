@@ -95,7 +95,7 @@ class SpotifyClient:
         columns = [
             "songs", "danceability", "energy", "key", "loudness", "mode",
             "speechiness", "acousticness", "instrumentalness", "liveness",
-            "valence", "tempo", "duration_ms"
+            "valence", "tempo", "duration_ms", "time_signature"
         ]
 
         song_features_df = pd.DataFrame(columns=columns)

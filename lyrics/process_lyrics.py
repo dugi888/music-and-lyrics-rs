@@ -6,7 +6,7 @@ from sklearn.model_selection import train_test_split, KFold, GridSearchCV
 from sklearn.linear_model import LinearRegression, LogisticRegression, SGDClassifier, RidgeClassifier, SGDRegressor
 from sklearn.neighbors import KNeighborsClassifier
 from sklearn.svm import SVC, SVR
-from sklearn.tree import  DecisionTreeClassifier, DecisionTreeRegressor
+from sklearn.tree import DecisionTreeClassifier, DecisionTreeRegressor
 from sklearn.ensemble import RandomForestRegressor, GradientBoostingRegressor, ExtraTreesRegressor, \
     RandomForestClassifier
 from sklearn.metrics import root_mean_squared_error, r2_score, accuracy_score, mean_squared_error, mean_absolute_error
@@ -14,6 +14,7 @@ from nltk.stem import WordNetLemmatizer
 from nltk import PorterStemmer, NaiveBayesClassifier
 from sklearn import decomposition
 import utils
+
 
 # HAD TO DOWNLOAD THIS FOR THE FIRST TIME
 # nltk.download('punkt')
@@ -53,17 +54,12 @@ class TextProcessing:
         df_combined = pd.concat([df, tfidf_df], axis=1)
 
         # Save the combined DataFrame to an Excel file
-        df_combined.to_excel(utils.get_output_directory_path()+'/tf_idf_dataframe.xlsx', index=False)
+        df_combined.to_excel(utils.get_output_directory_path() + '/tf_idf_dataframe.xlsx', index=False)
         return df_combined
 
     def dimension_reduction(self, df):
         pca_data = self.pca.fit_transform(df)
         return pca_data, self.pca
-
-    @staticmethod
-    def merge_dataframes_by_song_name(pca_df, original_df):
-        merged_df = pd.merge(original_df, pca_df, on="songs", how="inner")
-        return merged_df
 
     def append_df_to_excel(self, filename, df, sheet_name):
         try:
@@ -88,14 +84,15 @@ class TextProcessing:
             with pd.ExcelWriter(filename, engine='openpyxl') as writer:
                 df.to_excel(writer, sheet_name=sheet_name, index=False)
 
+    # TODO Optimize this method
     def evaluation(self, df, column_to_predict, model, test_size=0.2):
 
         # Selecting relevant columns
-        columns_to_select = [column_to_predict] + [f'PC{i}' for i in range(1, 21)]
+        columns_to_select = [f'PC{i}' for i in range(1, 21)]
         selected_df = df[columns_to_select]
 
         # Split dataset into features (X) and target (y)
-        X = selected_df.drop(columns=[column_to_predict])  # Features
+        X = selected_df  # Features
         y = selected_df[column_to_predict]  # Target
 
         # Split data into training and testing sets
@@ -175,7 +172,7 @@ class TextProcessing:
         model_name = type(model).__name__
 
         # Define the path to the existing Excel file
-        excel_filename = utils.get_output_directory_path()+'/model_evaluation.xlsx'
+        excel_filename = utils.get_output_directory_path() + '/model_evaluation.xlsx'
 
         self.append_df_to_excel(excel_filename, results_df, model_name)
 
@@ -192,12 +189,13 @@ class TextProcessing:
         # print(f"Final Test R^2 Score: {final_test_r2:.10f}")
         # print("\n\n")
 
-    def find_optimal_hyperparameters(self, df, column_to_predict, model, param_grid):
-        columns_to_select = [column_to_predict] + [f'PC{i}' for i in range(1, 21)]
+    @staticmethod
+    def find_optimal_hyperparameters(df, column_to_predict, model, param_grid):
+        columns_to_select = [f'PC{i}' for i in range(1, 21)]
         selected_df = df[columns_to_select]
 
         # Split dataset into features (X) and target (y)
-        X = selected_df.drop(columns=[column_to_predict])  # Features
+        X = selected_df  # Features
         y = selected_df[column_to_predict]  # Target
 
         grid_search = GridSearchCV(estimator=model, param_grid=param_grid, cv=5, scoring='neg_root_mean_squared_error')
@@ -209,7 +207,7 @@ class TextProcessing:
         best_result = f"Best neg_root_mean_squared_error score: {grid_search.best_score_}\n"
 
         # Check if file exists
-        filename = utils.get_output_directory_path()+'/hyper_parameters_for_regressors.txt'
+        filename = utils.get_output_directory_path() + '/hyper_parameters_for_regressors.txt'
 
         with open(filename, 'a') as file:
             file.write(best_params + best_result + "\n\n")
@@ -273,16 +271,10 @@ class TextProcessing:
         })
 
         # Print results to Excel
-        excel_filename = utils.get_output_directory_path()+'/model_evaluation_classifier.xlsx'
+        excel_filename = utils.get_output_directory_path() + '/model_evaluation_classifier.xlsx'
         model_name = type(model).__name__
 
         self.append_df_to_excel(excel_filename, results_df, model_name)
-
-    @staticmethod
-    def merge_dataframes(pca_df, original_df):
-        merged_df = pd.merge(original_df, pca_df, on="songs", how="inner")
-        merged_df.to_excel(utils.get_output_directory_path()+'/merged_dataframe.xlsx', index=False)
-        return merged_df
 
     @staticmethod
     def extract_song_name(song):
@@ -296,7 +288,7 @@ class TextProcessing:
 
         print("Loading dataset!\n")
         # Read input DataFrame
-        df = pd.read_excel(utils.get_output_directory_path()+'/lyrics_output_genius.xlsx')
+        df = pd.read_excel(utils.get_output_directory_path() + '/lyrics_output_genius.xlsx')
 
         # Calculate TF-IDF
         print("Calculating TF-IDF!\n")
@@ -312,18 +304,20 @@ class TextProcessing:
 
         # Include the original song titles in the PCA DataFrame
         pca_df = pd.concat([full_df[['songs']], pca_df], axis=1)
-        pca_df.to_excel(utils.get_output_directory_path()+'/PCA_dataframe.xlsx', index=False)
+        pca_df.to_excel(utils.get_output_directory_path() + '/PCA_dataframe.xlsx', index=False)
 
         # Prediction
 
-        pca_df = pd.read_excel(utils.get_output_directory_path()+'/PCA_dataframe.xlsx')
+        pca_df = pd.read_excel(utils.get_output_directory_path() + '/PCA_dataframe.xlsx')
 
-        original_df = pd.read_excel(utils.get_output_directory_path()+'/skladba_dataframe_cleaned.xlsx',
+        original_df = pd.read_excel(utils.get_output_directory_path() + '/skladba_dataframe_cleaned.xlsx',
                                     converters={'songs': self.extract_song_name})
         lyrics_columns = [col for col in original_df.columns if 'lyrics' in col.lower() or 'songs' in col.lower()]
 
         original_df_parameter = original_df[lyrics_columns]
-        merged = self.merge_dataframes(pca_df, original_df_parameter)
+
+        # TODO Check output_file_name, try to change it to be more general
+        merged = utils.merge_dataframes(pca_df, original_df_parameter, "merged_dataframe.xlsx")
 
         columns_to_predict = ['lyrics_complexity_mean', 'lyrics_comprehensibility_mean', 'lyrics_depth_mean']
 
@@ -349,7 +343,7 @@ class TextProcessing:
             RidgeClassifier(alpha=1.0, random_state=42),
             SGDClassifier(alpha=0.0001, penalty='l2', loss='log', random_state=42),
             DecisionTreeClassifier(max_depth=None, min_samples_split=2, min_samples_leaf=1, random_state=42),
-            KNeighborsClassifier(n_neighbors=10) # Not sure for parameters
+            KNeighborsClassifier(n_neighbors=10)  # Not sure for parameters
             # NaiveBayesClassifier() How to implement this and fix parameters.
         ]
         param_grids = [
@@ -383,7 +377,7 @@ class TextProcessing:
         ]
 
         # print("Hyperparameters tuning!")
-        #for model, param_grid in zip(models, param_grids):
+        # for model, param_grid in zip(models, param_grids):
         #    for column in columns_to_predict:
         #        self.find_optimal_hyperparameters(merged, column, model, param_grid)
 
