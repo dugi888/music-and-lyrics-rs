@@ -61,7 +61,7 @@ class LyricsDownloader(object):
                 success = False
 
             if success:
-                new_row = {'songs': song_name, 'lyrics': lyrics}
+                new_row = {'songs': song, 'lyrics': lyrics}
                 lyrics_df.loc[len(lyrics_df)] = new_row
             else:
                 error_songs.append(song)

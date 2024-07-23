@@ -96,7 +96,31 @@ def get_output_directory_path(directory_name="output_tables", start_dir='.'):
     return None
 
 
-def merge_dataframes(first_df, second_df, output_file_name="merged_dataframe.xlsx", column_name="songs", how='inner'):
-    merged_df = pd.merge(first_df, second_df, on=column_name, how=how)
-    merged_df.to_excel(get_output_directory_path() + '/' + output_file_name, index=False)
+def merge_dataframes(first_df, second_df, output_file_name=None, column_name="songs", how_param="inner"):
+    merged_df = pd.merge(first_df, second_df, on=column_name, how=how_param)
+    if output_file_name is not None:
+        merged_df.to_excel(get_output_directory_path() + '/' + output_file_name, index=False)
     return merged_df
+
+
+def classify_value(value, value_at_1_3, value_at_2_3):
+    if value < value_at_1_3:
+        return 'LOW'
+    elif value <= value_at_2_3:
+        return 'MID'
+    else:
+        return 'HIGH'
+
+def find_boundaries(column):
+    sorted = column.sort_values(ascending=True)
+
+    index_1_3 = int(len(sorted) * (1 / 3))
+    index_2_3 = int(len(sorted) * (2 / 3))
+
+    # Retrieve the value at the 1/3 position
+    value_at_1_3 = sorted.iloc[index_1_3]
+
+    # Retrieve the value at the 2/3 position
+    value_at_2_3 = sorted.iloc[index_2_3]
+
+    return value_at_1_3, value_at_2_3
