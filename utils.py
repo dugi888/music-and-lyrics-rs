@@ -103,24 +103,62 @@ def merge_dataframes(first_df, second_df, output_file_name=None, column_name="so
     return merged_df
 
 
-def classify_value(value, value_at_1_3, value_at_2_3):
-    if value < value_at_1_3:
+# def classify_value(value, value_at_1_3, value_at_2_3):
+#     if value < value_at_1_3:
+#         return 'LOW'
+#     elif value <= value_at_2_3:
+#         return 'MID'
+#     else:
+#         return 'HIGH'
+
+#
+# def find_boundaries(column):
+#     sorted = column.sort_values(ascending=True)
+#
+#     index_1_3 = int(len(sorted) * (1 / 3))
+#     index_2_3 = int(len(sorted) * (2 / 3))
+#
+#     # Retrieve the value at the 1/3 position
+#     value_at_1_3 = sorted.iloc[index_1_3]
+#
+#     # Retrieve the value at the 2/3 position
+#     value_at_2_3 = sorted.iloc[index_2_3]
+#
+#     return value_at_1_3, value_at_2_3
+#
+#
+# def create_classifications(df):
+#     for col in df.columns:
+#         if col.lower() == 'songs':
+#             continue
+#         one_third_value, two_thirds_value = find_boundaries(df[col])
+#         df.loc[:, col + '_class'] = df[col].apply(
+#             lambda x: classify_value(x, one_third_value, two_thirds_value))
+#     df.to_excel(get_output_directory_path() + '/lyrics_features_classified.xlsx', index=False)
+#     return df
+
+def find_boundaries(column):
+    quantiles = column.quantile([1/3, 2/3]).values
+    value_at_1_3, value_at_2_3 = quantiles[0], quantiles[1]
+    return value_at_1_3, value_at_2_3
+
+
+def classify_value(x, one_third_value, two_thirds_value):
+    if x <= one_third_value:
         return 'LOW'
-    elif value <= value_at_2_3:
+    elif x <= two_thirds_value:
         return 'MID'
     else:
         return 'HIGH'
 
-def find_boundaries(column):
-    sorted = column.sort_values(ascending=True)
 
-    index_1_3 = int(len(sorted) * (1 / 3))
-    index_2_3 = int(len(sorted) * (2 / 3))
+def create_classifications(df):
+    for col in df.columns:
+        if col.lower() == 'songs':
+            continue
+        one_third_value, two_thirds_value = find_boundaries(df[col])
+        df[col + '_class'] = df[col].apply(lambda x: classify_value(x, one_third_value, two_thirds_value))
 
-    # Retrieve the value at the 1/3 position
-    value_at_1_3 = sorted.iloc[index_1_3]
-
-    # Retrieve the value at the 2/3 position
-    value_at_2_3 = sorted.iloc[index_2_3]
-
-    return value_at_1_3, value_at_2_3
+    output_path = get_output_directory_path() + '/lyrics_features_classified.xlsx'
+    df.to_excel(output_path, index=False)
+    return df

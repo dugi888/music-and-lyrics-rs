@@ -1,20 +1,23 @@
+import numpy as np
 import pandas as pd
 from openpyxl.reader.excel import load_workbook
 from sklearn.feature_extraction.text import TfidfVectorizer
 from nltk.tokenize import word_tokenize
-from sklearn.gaussian_process import GaussianProcessRegressor
 from sklearn.model_selection import train_test_split, KFold, GridSearchCV
-from sklearn.linear_model import LinearRegression, LogisticRegression, SGDClassifier, RidgeClassifier, SGDRegressor
+from sklearn.linear_model import LinearRegression, LogisticRegression, SGDClassifier, RidgeClassifier, SGDRegressor, \
+    Ridge
 from sklearn.neighbors import KNeighborsClassifier
 from sklearn.svm import SVC, SVR
 from sklearn.tree import DecisionTreeClassifier, DecisionTreeRegressor
 from sklearn.ensemble import RandomForestRegressor, GradientBoostingRegressor, ExtraTreesRegressor, \
     RandomForestClassifier
-from sklearn.metrics import root_mean_squared_error, r2_score, accuracy_score, mean_squared_error, mean_absolute_error, \
-    confusion_matrix, precision_score, recall_score, f1_score, roc_auc_score, log_loss, matthews_corrcoef
+from sklearn.metrics import (root_mean_squared_error, r2_score, accuracy_score, mean_squared_error, mean_absolute_error,
+                             confusion_matrix, precision_score, recall_score, f1_score, matthews_corrcoef)
 from nltk.stem import WordNetLemmatizer
-from nltk import PorterStemmer, NaiveBayesClassifier
+from nltk import PorterStemmer
 from sklearn import decomposition
+from collections import Counter
+
 import utils
 
 
@@ -116,7 +119,14 @@ class TextProcessing:
 
         # Find the best parameters for model
         grid_search = GridSearchCV(estimator=model, param_grid=param_grid, cv=10)
-        grid_search.fit(X, y)
+        try:
+            grid_search.fit(X, y)
+        except Exception as e:
+            print(f" Model {type(model).__name__} failed to fit")
+            print(e)
+            # traceback.print_exc()
+            exit()
+
         best_model = grid_search.best_estimator_
         # Perform cross-validation on the training set
         train_rmses = []
@@ -127,9 +137,6 @@ class TextProcessing:
         test_maes = []
         test_mses = []
         test_r2s = []
-
-        baseline_predictions = [y.mean()] * len(y)
-        baseline_rmse = root_mean_squared_error(y, baseline_predictions)
 
         for train_index, test_index in kf.split(X_train):
             X_train_fold, X_val_fold = X_train.iloc[train_index], X_train.iloc[test_index]
@@ -172,6 +179,13 @@ class TextProcessing:
         final_test_mse = mean_squared_error(y_test, y_pred)
         final_test_r2 = r2_score(y_test, y_pred)
 
+        # Baseline evaluation
+        baseline_predictions = [3] * len(y_test)
+        baseline_rmse = root_mean_squared_error(y_test, baseline_predictions)
+        baseline_mse = mean_squared_error(y_test, baseline_predictions)
+        baseline_mae = mean_absolute_error(y_test, baseline_predictions)
+        baseline_r2 = r2_score(y_test, baseline_predictions)
+
         # Generating dataframe from results
         results_df = pd.DataFrame({
             'Feature': [column_to_predict],
@@ -179,22 +193,30 @@ class TextProcessing:
             'Training MAE': [sum(train_maes) / len(train_maes)],
             'Training MSE': [sum(train_mses) / len(train_mses)],
             'Training R^2': [sum(train_r2s) / len(train_r2s)],
-            'Baseline RMSE': [baseline_rmse],
             'Test RMSE': [final_test_rmse],
+            'Baseline RMSE': [baseline_rmse],
+            'RMSE dif': [baseline_rmse - final_test_rmse],
+
             'Test MAE': [final_test_mae],
+            'Baseline MAE': [baseline_mae],
+            'MAE dif': [baseline_mae - final_test_mae],
+
             'Test MSE': [final_test_mse],
+            'Baseline MSE': [baseline_mse],
+            'MSE dif': [baseline_mse - final_test_mse],
+
             'Test R^2': [final_test_r2],
-            'RMSE dif': [baseline_rmse - final_test_rmse]
+            'Baseline R^2': [baseline_r2],
+            'R^2 dif': [baseline_r2 - final_test_r2]
         })
 
         # Print to excel
         model_name = type(model).__name__
 
         # Define the path to the existing Excel file
-        excel_filename = utils.get_output_directory_path() + '/model_evaluation_best_fit.xlsx'
+        excel_filename = utils.get_output_directory_path() + '/lyrics_evaluation_regressor.xlsx'
 
         self.append_df_to_excel(excel_filename, results_df, model_name)
-
 
     @staticmethod
     def find_optimal_hyperparameters(df, column_to_predict, model, param_grid):
@@ -223,7 +245,7 @@ class TextProcessing:
         print(grid_search.best_params_)
         print(f"Best neg_root_mean_squared_error score: {grid_search.best_score_}\n")
 
-    def evaluation_classifier(self, df, column_to_predict, model, test_size=0.2):
+    def evaluation_classifier(self, df, column_to_predict, model, param_grid, test_size=0.2):
 
         # Selecting relevant columns
         columns_to_select = [column_to_predict] + [f'PC{i}' for i in range(1, 21)]
@@ -239,40 +261,64 @@ class TextProcessing:
         # Initialize KFold cross-validation (10 folds)
         kf = KFold(n_splits=10, shuffle=True, random_state=42)
 
+        # Find the best parameters for model
+        grid_search = GridSearchCV(estimator=model, param_grid=param_grid, cv=10)
+        try:
+            grid_search.fit(X, y)
+        except Exception as e:
+            print(f" Model {type(model).__name__} failed to fit")
+            print(e)
+            # traceback.print_exc()
+            exit()
+
+        best_model = grid_search.best_estimator_
+
         # Perform cross-validation on the training set
         train_scores = []
         test_scores = []
+
+        # Extract the largest class name
+
+        print(column_to_predict, "\t", Counter(y))
+        most_frequent_value = y.value_counts().idxmax()
+
+        baseline_predictions = [most_frequent_value] * len(y_test)
 
         for train_index, test_index in kf.split(X_train):
             X_train_fold, X_val_fold = X_train.iloc[train_index], X_train.iloc[test_index]
             y_train_fold, y_val_fold = y_train.iloc[train_index], y_train.iloc[test_index]
 
             # Fit the model on the training fold
-            model.fit(X_train_fold, y_train_fold)
+            best_model.fit(X_train_fold, y_train_fold)
 
             # Predict and evaluate on the training fold
-            y_train_pred = model.predict(X_train_fold)
+            y_train_pred = best_model.predict(X_train_fold)
             train_score = accuracy_score(y_train_fold, y_train_pred)
             train_scores.append(train_score)
 
             # Predict and evaluate on the validation fold
-            y_val_pred = model.predict(X_val_fold)
+            y_val_pred = best_model.predict(X_val_fold)
             test_score = accuracy_score(y_val_fold, y_val_pred)
             test_scores.append(test_score)
 
         # Evaluate on the test set (final evaluation)
-        model.fit(X_train, y_train)
-        y_pred = model.predict(X_test)
+        best_model.fit(X_train, y_train)
+        y_pred = best_model.predict(X_test)
 
         # Evaluation
-        final_test_score = accuracy_score(y_test, y_pred)
+        accuracy = accuracy_score(y_test, y_pred)
         conf_matrix = confusion_matrix(y_test, y_pred)
-        precision = precision_score(y_test, y_pred, average='weighted')
+        precision = precision_score(y_test, y_pred, average='weighted', zero_division=0)
         recall = recall_score(y_test, y_pred, average='weighted')
         f1 = f1_score(y_test, y_pred, average='weighted')
-        #roc_auc = roc_auc_score(y_test, model.predict_proba(X_test)[:, 1]) if hasattr(model, "predict_proba") else "N/A"
-        #logloss = log_loss(y_test, model.predict_proba(X_test)[:, 1]) if hasattr(model, "predict_proba") else "N/A"
         mcc = matthews_corrcoef(y_test, y_pred)
+
+        # Baseline evaluation
+        baseline_accuracy = accuracy_score(y_test, baseline_predictions)
+        baseline_precision = precision_score(y_test, baseline_predictions, average='weighted', zero_division=0)
+        baseline_recall = recall_score(y_test, baseline_predictions, average='weighted')
+        baseline_f1 = f1_score(y_test, baseline_predictions, average='weighted')
+        baseline_mcc = matthews_corrcoef(y_test, baseline_predictions)
 
         # Calculate average training and validation scores
         avg_train_score = sum(train_scores) / len(train_scores)
@@ -283,30 +329,23 @@ class TextProcessing:
             'Feature': [column_to_predict],
             'Training Accuracy': [avg_train_score],
             'Validation Accuracy': [avg_test_score],
-            'Test Accuracy': [final_test_score],
+            'Test Accuracy': [accuracy],
+            'Baseline Accuracy': [baseline_accuracy],
             'Precision': [precision],
+            'Baseline Precision': [baseline_precision],
             'Recall': [recall],
+            'Baseline Recall': [baseline_recall],
             'F1-Score': [f1],
-            #'ROC AUC': [roc_auc],
-            #'Log Loss': [logloss],
-            'MCC': [mcc]
+            'Baseline F1-Score': [baseline_f1],
+            'MCC': [mcc],
+            'Baseline MCC': [baseline_mcc]
         })
 
         # Print results to Excel
-        excel_filename = utils.get_output_directory_path() + '/model_evaluation_classifier.xlsx'
+        excel_filename = utils.get_output_directory_path() + '/lyrics_evaluation_classifier.xlsx'
         model_name = type(model).__name__
 
         self.append_df_to_excel(excel_filename, results_df, model_name)
-
-    def create_classifications(self, df):
-        for col in df.columns:
-            if col.lower() == 'songs':
-                continue
-            one_third_value, two_thirds_value = utils.find_boundaries(df[col])
-            df.loc[:, col + '_class'] = df[col].apply(
-                lambda x: utils.classify_value(x, one_third_value, two_thirds_value))
-        df.to_excel(utils.get_output_directory_path() + '/lyrics_features_classified.xlsx', index=False)
-        return df
 
     def run(self):
         print("Processing lyrics!\n")
@@ -317,7 +356,8 @@ class TextProcessing:
 
         # Calculate TF-IDF
         print("Calculating TF-IDF!\n")
-        tfidf_df = pd.read_excel(utils.get_output_directory_path() + '/tf_idf_dataframe.xlsx') # self.calculate_tfidf(df)
+        tfidf_df = pd.read_excel(
+            utils.get_output_directory_path() + '/tf_idf_dataframe.xlsx')  # self.calculate_tfidf(df)
 
         # Perform dimension reduction
         print("Reducing dimensions!\n")
@@ -334,7 +374,8 @@ class TextProcessing:
         # Prediction
         pca_df = pd.read_excel(utils.get_output_directory_path() + '/PCA_dataframe.xlsx')
 
-        original_df = pd.read_excel(utils.get_output_directory_path() + '/skladba_dataframe_cleaned.xlsx') # , converters={'songs': self.extract_song_name}
+        original_df = pd.read_excel(
+            utils.get_output_directory_path() + '/skladba_dataframe_cleaned.xlsx')  # , converters={'songs': self.extract_song_name}
         lyrics_columns = [col for col in original_df.columns if
                           col.lower().startswith('lyrics_') and col.lower().endswith('_mean') or 'songs' in col.lower()]
 
@@ -347,7 +388,7 @@ class TextProcessing:
         # ['lyrics_complexity_mean', 'lyrics_comprehensibility_mean', 'lyrics_depth_mean']
 
         # Models that are being used in ML algorithm
-        models = [
+        regressors = [
             RandomForestRegressor(random_state=42),
             GradientBoostingRegressor(random_state=42),
             ExtraTreesRegressor(random_state=42),
@@ -355,75 +396,127 @@ class TextProcessing:
             LinearRegression(),
             SVR(),
             SGDRegressor(random_state=42),
-            GaussianProcessRegressor()
+            Ridge(random_state=42),
+            # Add maybe ridge regressor
         ]
 
         classifiers = [
-            SVC(kernel='linear'),
-            RandomForestClassifier(n_estimators=100, max_depth=None),
-            LogisticRegression(C=1.0, penalty='l2', random_state=42),
-            RidgeClassifier(alpha=1.0, random_state=42),
-            SGDClassifier(alpha=0.0001, penalty='l2', loss='log_loss', random_state=42),
-            DecisionTreeClassifier(max_depth=None, min_samples_split=2, min_samples_leaf=1, random_state=42),
-            KNeighborsClassifier(n_neighbors=10)  # Not sure for parameters
-            # NaiveBayesClassifier() How to implement this and fix parameters.
+            SVC(random_state=42),
+            RandomForestClassifier(random_state=42),
+            LogisticRegression(random_state=42),
+            RidgeClassifier(random_state=42),
+            SGDClassifier(random_state=42),
+            DecisionTreeClassifier(random_state=42),
+            KNeighborsClassifier()
+            # NaiveBayesClassifier()
         ]
-        param_grids = [
+        param_grids_regressor = [
+
             {  # RandomForestRegressor parameters
-                'n_estimators': [50, 100, 200],
-                'max_depth': [None, 10, 20],
-                'min_samples_split': [2, 5],
-                'min_samples_leaf': [1, 2]
+                'n_estimators': [10, 100, 200],
+                'max_depth': [None, 10, 100, 200],
+                'min_samples_split': [2, 5, 10],
+                'min_samples_leaf': [1, 5, 10],
             },
             {  # GradientBoostingRegressor parameters
-                'n_estimators': [50, 100, 200],
-                'learning_rate': [0.05, 0.1, 0.2],
-                'max_depth': [3, 5],
+                'n_estimators': [1, 100, 100, 200],
+                'learning_rate': [0.1, 1, 10],
+                'max_depth': [3, 30, 300],
                 'min_samples_split': [2, 5],
-                'min_samples_leaf': [1, 2]
+                'min_samples_leaf': [1, 10]
             },
             {  # ExtraTreesRegressor parameters
-                'n_estimators': [50, 100, 200],
-                'max_depth': [None, 10, 20],
+                'n_estimators': [1, 10, 100, 200],
+                'max_depth': [None, 10, 100],
                 'min_samples_split': [2, 5],
-                'min_samples_leaf': [1, 2]
+                'min_samples_leaf': [1, 10]
             },
             {  # DecisionTreeRegressor parameters
-                'max_depth': [None, 10, 20],
+                'max_depth': [None, 10, 100, 200],
+                'splitter': ['best', 'random'],
                 'min_samples_split': [2, 5],
-                'min_samples_leaf': [1, 2]
+                'min_samples_leaf': [1, 10]
             },
             {  # LinearRegression has no hyperparameters to tune
                 'fit_intercept': [True, False]
             },
-            {  # SVC parameters
-                'C': [0.1, 0.8, 2, 5, 7, 10],  # C can be between 0.1 and 10
+            {  # SVR parameters
                 'kernel': ['linear', 'poly', 'rbf', 'sigmoid'],
-                'degree': [2, 3, 4, 5],  # Degrees 2 to 5 for the polynomial kernel
-                'gamma': ['scale', 'auto'],  # Common choices for gamma
-                'epsilon': [0.01, 0.05, 0.1, 0.4, 0.6, 1],  # Epsilon can be between 0.01 and 1
-                'shrinking': [True, False]  # Whether to use the shrinking heuristic
+                'C': [0.1, 1, 10],
+                'gamma': ['scale', 'auto', 0.001, 0.01, 0.1, 1, 10],
+                'degree': [1, 10],
+                'max_iter': [-1],
+                'epsilon': [0.01, 0.1, 1]
             },
             {  # SGD parameters
                 'loss': ['squared_error', 'huber', 'epsilon_insensitive'],
-                'penalty': ['none', 'l2', 'l1', 'elasticnet'],
-                'alpha': [1, 0.1, 1e-4, 1e-2],
+                'penalty': [None, 'l2', 'l1', 'elasticnet'],
+                'alpha': [1, 0.1, 0.001, 0.0001, 0.00001],
                 'fit_intercept': [True, False],
+                'max_iter': [100, 1000, 10000],
                 'learning_rate': ['constant', 'optimal', 'invscaling', 'adaptive'],
-                'eta0': [1e-3, 1e-2, 1e-1],
-                'power_t': [0.25, 0.5, 0.75]
+                'eta0': [0.001, 0.01, 0.1]
+            },
+            {  # Ridge parameters
+                'alpha': [0.1, 1, 10],  # Example values; you can adjust this range as needed
+                'solver': ['auto', 'svd', 'cholesky', 'lsqr', 'saga']  # Different solvers to try
             }
         ]
 
-        print("Evaluating Regressors!\n")
-        # for model, param_grid in zip(models, param_grids):
+        param_grids_classifiers = [
+            {  # SVC parameters
+                'C': [0.1, 1, 10, 100],
+                'kernel': ['linear', 'poly', 'rbf', 'sigmoid'],
+                'gamma': ['scale', 'auto', 0.001, 0.01, 0.1, 1],
+                'degree': [2, 3, 7, 13]
+            },
+            {  # RandomForestClassifier parameters
+                'n_estimators': [10, 100, 200],
+                'max_depth': [None, 10, 100, 200],
+                'min_samples_split': [2, 5, 10],
+                'min_samples_leaf': [1, 2, 4],
+                'bootstrap': [True, False]
+            },
+            {  # LogisticRegression parameters
+                'C': [0.01, 0.1, 1, 10, 100],
+                'penalty': ['l1', 'l2', 'elasticnet', 'none'],
+                'solver': ['newton-cg', 'lbfgs', 'liblinear', 'sag', 'saga'],
+                'max_iter': [100, 200, 300]
+            },
+            {  # RidgeClassifier parameters
+                'alpha': [0.1, 1.0, 10.0],
+                'solver': ['auto', 'svd', 'cholesky', 'lsqr', 'sparse_cg', 'sag', 'saga']
+            },
+            {  # SGDClassifier parameters
+                'alpha': [0.0001, 0.001, 0.01, 0.1],
+                'penalty': ['l2', 'l1', 'elasticnet'],
+                'max_iter': [1000, 2000, 3000],
+                'loss': ['hinge', 'log_loss', 'modified_huber', 'squared_hinge', 'perceptron']
+            },
+            {  # DecisionTreeClassifier parameters
+                'max_depth': [None, 10, 100, 200],
+                'min_samples_split': [2, 10],
+                'min_samples_leaf': [1, 2, 10],
+                'criterion': ['gini', 'entropy']
+            },
+            {  # KNeighborsClassifier parameters
+                'n_neighbors': [3, 5, 7, 13, 17],
+                'weights': ['uniform', 'distance'],
+                'algorithm': ['auto', 'ball_tree', 'kd_tree', 'brute'],
+                'p': [1, 2]
+            }
+        ]
+
+        # print("Evaluating Lyrics with Regressors!\n")
+        # for model, param_grid in zip(regressors, param_grids_regressor):
         #     for column in columns_to_predict:
         #         self.evaluation_regressor(merged, column, model, param_grid)
 
-        classification_df = self.create_classifications(lyrics_features_df.copy())
+        print("Evaluating Lyrics with Classifiers!\n")
+        classification_df = pd.read_excel(utils.get_output_directory_path()+'/lyrics_features_classified.xlsx')#utils.create_classifications(lyrics_features_df.copy())
         columns_to_predict = [col for col in classification_df.columns if col.lower().endswith('class')]
         merged = utils.merge_dataframes(classification_df, pca_df)
-        print("Evaluating Classifiers!\n")
-        for model in classifiers:
+
+        for model, param_grid in zip(classifiers, param_grids_classifiers):
             for column in columns_to_predict:
-                self.evaluation_classifier(merged, column, model)
+                self.evaluation_classifier(merged, column, model, param_grid)
