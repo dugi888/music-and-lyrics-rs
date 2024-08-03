@@ -13,6 +13,7 @@ from sklearn.ensemble import RandomForestRegressor, GradientBoostingRegressor, E
     RandomForestClassifier
 from sklearn.metrics import (root_mean_squared_error, r2_score, accuracy_score, mean_squared_error, mean_absolute_error,
                              confusion_matrix, precision_score, recall_score, f1_score, matthews_corrcoef)
+from sklearn.inspection import permutation_importance
 from nltk.stem import WordNetLemmatizer
 from nltk import PorterStemmer
 from sklearn import decomposition
@@ -41,13 +42,6 @@ class TextProcessing:
         else:
             processed_tokens = [self.lemmatizer.lemmatize(token) for token in tokens]
         return ' '.join(processed_tokens)
-
-    @staticmethod
-    def extract_song_name(song):
-        if ':' in song:
-            return song.split(':')[1].strip()
-        else:
-            return song  # return as is if no ':' found
 
     def calculate_tfidf(self, df):
         # Preprocess text
@@ -97,22 +91,23 @@ class TextProcessing:
             with pd.ExcelWriter(filename, engine='openpyxl') as writer:
                 df.to_excel(writer, sheet_name=sheet_name, index=False)
 
-    # TODO Optimize this method
-    def evaluation_regressor(self, df, column_to_predict, model, param_grid, test_size=0.2):
+    @staticmethod
+    def get_top_5_lyrics_features(features):
+        feature_dict = {'PC' + str(i + 1): v for i, v in enumerate(features)}
+        sorted_features = sorted(feature_dict.items(), key=lambda item: item[1], reverse=True)
+        top_5_features = sorted_features[:5]
 
-        # Selecting relevant columns
-        columns_to_select = [f'PC{i}' for i in range(1, 21)]
-        selected_df = df[columns_to_select]
+        return top_5_features
+
+    # TODO Optimize this method
+    def evaluation_regressor(self, features_df, target_df, column_to_predict, model, param_grid, test_size=0.2):
 
         # Split dataset into features (X) and target (y)
-        X = selected_df  # Features
-        y = df[column_to_predict]  # Target
+        X = features_df  # Features
+        y = target_df[column_to_predict]  # Target
 
         # Split data into training and testing sets
         X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=test_size, random_state=42)
-
-        # Initialize your model (example: Linear Regression)
-        # model = LinearRegression()
 
         # Initialize KFold cross-validation (10 folds)
         kf = KFold(n_splits=10, shuffle=True, random_state=42)
@@ -171,9 +166,31 @@ class TextProcessing:
             test_mses.append(test_mse)
             test_r2s.append(test_r2)
 
-        # Evaluate on the test set (final evaluation)
         best_model.fit(X_train, y_train)
         y_pred = best_model.predict(X_test)
+
+        # Feature importance and permutation
+        top_features = []
+        top_permutation_features = []
+        try:
+            importance_features = best_model.coef_
+            top_features = self.get_top_5_lyrics_features(importance_features)
+        except Exception as e:
+            print(e)
+
+        try:
+            importance_features = best_model.feature_importances_
+            top_features = self.get_top_5_lyrics_features(importance_features)
+        except Exception as e:
+            print(e)
+
+        try:
+            pi = permutation_importance(best_model, X, y, scoring='neg_mean_squared_error').importances_mean
+            top_permutation_features = self.get_top_5_lyrics_features(pi)
+        except Exception as e:
+            print(e)
+
+        # Evaluate on the test set (final evaluation)
         final_test_rmse = root_mean_squared_error(y_test, y_pred)
         final_test_mae = mean_absolute_error(y_test, y_pred)
         final_test_mse = mean_squared_error(y_test, y_pred)
@@ -207,7 +224,10 @@ class TextProcessing:
 
             'Test R^2': [final_test_r2],
             'Baseline R^2': [baseline_r2],
-            'R^2 dif': [baseline_r2 - final_test_r2]
+            'R^2 dif': [baseline_r2 - final_test_r2],
+
+            'Top 5 Features': [top_features],
+            'Top 5 Perm. Features': [top_permutation_features]
         })
 
         # Print to excel
@@ -218,42 +238,10 @@ class TextProcessing:
 
         self.append_df_to_excel(excel_filename, results_df, model_name)
 
-    @staticmethod
-    def find_optimal_hyperparameters(df, column_to_predict, model, param_grid):
-        columns_to_select = [f'PC{i}' for i in range(1, 21)]
-        selected_df = df[columns_to_select]
+    def evaluation_classifier(self, features_df, target_df, column_to_predict, model, param_grid, test_size=0.2):
 
-        # Split dataset into features (X) and target (y)
-        X = selected_df  # Features
-        y = selected_df[column_to_predict]  # Target
-
-        grid_search = GridSearchCV(estimator=model, param_grid=param_grid, cv=10, scoring='neg_root_mean_squared_error')
-        grid_search.fit(X, y)
-
-        # Print the best parameters and best score
-        best_params = (f"Best parameters for {type(model).__name__} when predicting {column_to_predict}:\n" +
-                       str(grid_search.best_params_) + '\n')
-        best_result = f"Best neg_root_mean_squared_error score: {grid_search.best_score_}\n"
-
-        # Check if file exists
-        filename = utils.get_output_directory_path() + '/hyper_parameters_for_regressors.txt'
-
-        with open(filename, 'a') as file:
-            file.write(best_params + best_result + "\n\n")
-
-        print(f"Best parameters for {type(model).__name__} when predicting {column_to_predict}:")
-        print(grid_search.best_params_)
-        print(f"Best neg_root_mean_squared_error score: {grid_search.best_score_}\n")
-
-    def evaluation_classifier(self, df, column_to_predict, model, param_grid, test_size=0.2):
-
-        # Selecting relevant columns
-        columns_to_select = [column_to_predict] + [f'PC{i}' for i in range(1, 21)]
-        selected_df = df[columns_to_select]
-
-        # Split dataset into features (X) and target (y)
-        X = selected_df.drop(columns=[column_to_predict])  # Features
-        y = selected_df[column_to_predict]  # Target
+        X = features_df  # Features
+        y = target_df[column_to_predict]  # Target
 
         # Split data into training and testing sets
         X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=test_size, random_state=42)
@@ -305,9 +293,34 @@ class TextProcessing:
         best_model.fit(X_train, y_train)
         y_pred = best_model.predict(X_test)
 
+        # Feature importance and permutation
+        top_features = []
+        top_permutation_features = []
+        try:
+            importance_features = best_model.coef_
+            top_features = self.get_top_5_lyrics_features(importance_features)
+        except Exception as e:
+            print(e)
+
+        try:
+            importance_features = best_model.feature_importances_
+            top_features = self.get_top_5_lyrics_features(importance_features)
+        except Exception as e:
+            print(e)
+
+        try:
+            pi = permutation_importance(best_model, X, y, scoring='neg_mean_squared_error').importances_mean
+            top_permutation_features = self.get_top_5_lyrics_features(pi)
+        except Exception as e:
+            print(e)
+
         # Evaluation
+        labels = ['LOW', 'MID', 'HIGH']
         accuracy = accuracy_score(y_test, y_pred)
-        conf_matrix = confusion_matrix(y_test, y_pred)
+
+        conf_matrix = confusion_matrix(y_test, y_pred, labels=labels)
+        cm_table = pd.DataFrame(data=conf_matrix, index=labels, columns=labels)
+
         precision = precision_score(y_test, y_pred, average='weighted', zero_division=0)
         recall = recall_score(y_test, y_pred, average='weighted')
         f1 = f1_score(y_test, y_pred, average='weighted')
@@ -329,16 +342,26 @@ class TextProcessing:
             'Feature': [column_to_predict],
             'Training Accuracy': [avg_train_score],
             'Validation Accuracy': [avg_test_score],
+
             'Test Accuracy': [accuracy],
             'Baseline Accuracy': [baseline_accuracy],
+
             'Precision': [precision],
             'Baseline Precision': [baseline_precision],
+
             'Recall': [recall],
             'Baseline Recall': [baseline_recall],
+
             'F1-Score': [f1],
             'Baseline F1-Score': [baseline_f1],
+
             'MCC': [mcc],
-            'Baseline MCC': [baseline_mcc]
+            'Baseline MCC': [baseline_mcc],
+
+            'Confusion Matrix': [cm_table.to_string()],
+
+            'Top 5 Features': [top_features],
+            'Top 5 Perm. Features': [top_permutation_features]
         })
 
         # Print results to Excel
@@ -352,40 +375,31 @@ class TextProcessing:
 
         print("Loading dataset!\n")
         # Read input DataFrame
-        df = pd.read_excel(utils.get_output_directory_path() + '/lyrics_output_genius.xlsx')
+        lyrics_df = pd.read_excel(utils.get_output_directory_path() + '/lyrics_output_genius.xlsx')
 
         # Calculate TF-IDF
         print("Calculating TF-IDF!\n")
-        tfidf_df = pd.read_excel(
-            utils.get_output_directory_path() + '/tf_idf_dataframe.xlsx')  # self.calculate_tfidf(df)
+        tfidf_df = self.calculate_tfidf(lyrics_df)
 
         # Perform dimension reduction
         print("Reducing dimensions!\n")
-        send_df = tfidf_df.iloc[:, 4:]  # Selecting all columns from index 4 to the end
-        pca_data, pca = self.dimension_reduction(send_df)
+        full_pca_df = tfidf_df.iloc[:, 4:]  # Selecting all columns from index 4 to the end
+        pca_data, pca = self.dimension_reduction(full_pca_df)
 
-        # Create a DataFrame with the PCA data
-        pca_df = pd.DataFrame(pca_data, columns=[f'PC{i + 1}' for i in range(pca_data.shape[1])])
+        # Create a Target df with the PCA data
+        features_df = pd.DataFrame(pca_data, columns=[f'PC{i + 1}' for i in range(pca_data.shape[1])])
 
-        # Include the original song titles in the PCA DataFrame
-        pca_df = pd.concat([tfidf_df[['songs']], pca_df], axis=1)
-        pca_df.to_excel(utils.get_output_directory_path() + '/PCA_dataframe.xlsx', index=False)
-
-        # Prediction
-        pca_df = pd.read_excel(utils.get_output_directory_path() + '/PCA_dataframe.xlsx')
-
+        # Getting columns to predict
         original_df = pd.read_excel(
-            utils.get_output_directory_path() + '/skladba_dataframe_cleaned.xlsx')  # , converters={'songs': self.extract_song_name}
+            utils.get_output_directory_path() + '/skladba_dataframe_cleaned.xlsx')
+
         lyrics_columns = [col for col in original_df.columns if
                           col.lower().startswith('lyrics_') and col.lower().endswith('_mean') or 'songs' in col.lower()]
 
         lyrics_features_df = original_df[lyrics_columns]
 
-        # TODO Check output_file_name, try to change it to be more general
-        merged = utils.merge_dataframes(pca_df, lyrics_features_df, "merged_dataframe.xlsx")
-
         columns_to_predict = [col for col in lyrics_features_df.columns if 'lyrics' in col.lower()]
-        # ['lyrics_complexity_mean', 'lyrics_comprehensibility_mean', 'lyrics_depth_mean']
+        target_df = original_df[columns_to_predict]
 
         # Models that are being used in ML algorithm
         regressors = [
@@ -397,7 +411,6 @@ class TextProcessing:
             SVR(),
             SGDRegressor(random_state=42),
             Ridge(random_state=42),
-            # Add maybe ridge regressor
         ]
 
         classifiers = [
@@ -490,7 +503,7 @@ class TextProcessing:
             {  # SGDClassifier parameters
                 'alpha': [0.0001, 0.001, 0.01, 0.1],
                 'penalty': ['l2', 'l1', 'elasticnet'],
-                'max_iter': [1000, 2000, 3000],
+                'max_iter': [100, 1000, 10000],
                 'loss': ['hinge', 'log_loss', 'modified_huber', 'squared_hinge', 'perceptron']
             },
             {  # DecisionTreeClassifier parameters
@@ -507,16 +520,17 @@ class TextProcessing:
             }
         ]
 
-        # print("Evaluating Lyrics with Regressors!\n")
-        # for model, param_grid in zip(regressors, param_grids_regressor):
-        #     for column in columns_to_predict:
-        #         self.evaluation_regressor(merged, column, model, param_grid)
+        print("Evaluating Lyrics with Regressors!\n")
+        for model, param_grid in zip(regressors, param_grids_regressor):
+            for column in columns_to_predict:
+                self.evaluation_regressor(features_df, target_df, column, model, param_grid)
 
         print("Evaluating Lyrics with Classifiers!\n")
-        classification_df = pd.read_excel(utils.get_output_directory_path()+'/lyrics_features_classified.xlsx')#utils.create_classifications(lyrics_features_df.copy())
+        classification_df = pd.read_excel(
+            utils.get_output_directory_path() + '/lyrics_features_classified.xlsx')  # utils.create_classifications(lyrics_features_df.copy())
         columns_to_predict = [col for col in classification_df.columns if col.lower().endswith('class')]
-        merged = utils.merge_dataframes(classification_df, pca_df)
+        target_df = classification_df[columns_to_predict]
 
         for model, param_grid in zip(classifiers, param_grids_classifiers):
             for column in columns_to_predict:
-                self.evaluation_classifier(merged, column, model, param_grid)
+                self.evaluation_classifier(features_df, target_df, column, model, param_grid)
