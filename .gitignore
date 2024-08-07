@@ -164,3 +164,4 @@ cython_debug/
 # Other files
 tester_classes/*
 output_tables/*
+plots/*

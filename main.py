@@ -34,6 +34,6 @@ class Main:
 
 
 if __name__ == '__main__':
-    # print("Starting chain")
-    # LyricsProcessor().start_task_chain()
+    print("Starting chain")
+    #Main().start_task_chain()
     Main().debugger()

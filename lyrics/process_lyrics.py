@@ -13,13 +13,12 @@ from sklearn.ensemble import RandomForestRegressor, GradientBoostingRegressor, E
     RandomForestClassifier
 from sklearn.metrics import (root_mean_squared_error, r2_score, accuracy_score, mean_squared_error, mean_absolute_error,
                              confusion_matrix, precision_score, recall_score, f1_score, matthews_corrcoef)
-from sklearn.inspection import permutation_importance
 from nltk.stem import WordNetLemmatizer
 from nltk import PorterStemmer
 from sklearn import decomposition
-from collections import Counter
 
 import utils
+from lyrics.word2vec_vectorization import Create_Word2Vec
 
 
 # HAD TO DOWNLOAD THIS FOR THE FIRST TIME
@@ -91,16 +90,13 @@ class TextProcessing:
             with pd.ExcelWriter(filename, engine='openpyxl') as writer:
                 df.to_excel(writer, sheet_name=sheet_name, index=False)
 
-    @staticmethod
-    def get_top_5_lyrics_features(features):
-        feature_dict = {'PC' + str(i + 1): v for i, v in enumerate(features)}
-        sorted_features = sorted(feature_dict.items(), key=lambda item: item[1], reverse=True)
-        top_5_features = sorted_features[:5]
 
-        return top_5_features
+    def evaluation_regressor(self, features_df, target_df, column_to_predict, model,
+                             param_grid, emb_mthd, test_size=0.2):
 
-    # TODO Optimize this method
-    def evaluation_regressor(self, features_df, target_df, column_to_predict, model, param_grid, test_size=0.2):
+        model_name = type(model).__name__
+
+        print(f"\n\n\n ============= {model_name} - {column_to_predict} ============= \n\n\n")
 
         # Split dataset into features (X) and target (y)
         X = features_df  # Features
@@ -109,33 +105,21 @@ class TextProcessing:
         # Split data into training and testing sets
         X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=test_size, random_state=42)
 
-        # Initialize KFold cross-validation (10 folds)
-        kf = KFold(n_splits=10, shuffle=True, random_state=42)
+        # Initialize KFold cross-validation
+        kf = KFold(n_splits=5, shuffle=True, random_state=42)
 
-        # Find the best parameters for model
-        grid_search = GridSearchCV(estimator=model, param_grid=param_grid, cv=10)
-        try:
-            grid_search.fit(X, y)
-        except Exception as e:
-            print(f" Model {type(model).__name__} failed to fit")
-            print(e)
-            # traceback.print_exc()
-            exit()
-
+        # Find the best parameters for the model
+        grid_search = GridSearchCV(estimator=model, param_grid=param_grid, cv=kf, n_jobs=-1)
+        grid_search.fit(X_train, y_train)
         best_model = grid_search.best_estimator_
-        # Perform cross-validation on the training set
-        train_rmses = []
-        train_maes = []
-        train_mses = []
-        train_r2s = []
-        test_rmses = []
-        test_maes = []
-        test_mses = []
-        test_r2s = []
 
-        for train_index, test_index in kf.split(X_train):
-            X_train_fold, X_val_fold = X_train.iloc[train_index], X_train.iloc[test_index]
-            y_train_fold, y_val_fold = y_train.iloc[train_index], y_train.iloc[test_index]
+        # Perform cross-validation on the training set
+        train_rmses, train_maes, train_mses, train_r2s = [], [], [], []
+        test_rmses, test_maes, test_mses, test_r2s = [], [], [], []
+
+        for train_index, val_index in kf.split(X_train):
+            X_train_fold, X_val_fold = X_train.iloc[train_index], X_train.iloc[val_index]
+            y_train_fold, y_val_fold = y_train.iloc[train_index], y_train.iloc[val_index]
 
             # Fit the model on the training fold
             best_model.fit(X_train_fold, y_train_fold)
@@ -166,29 +150,9 @@ class TextProcessing:
             test_mses.append(test_mse)
             test_r2s.append(test_r2)
 
+        # Fit the best model on the entire training set
         best_model.fit(X_train, y_train)
         y_pred = best_model.predict(X_test)
-
-        # Feature importance and permutation
-        top_features = []
-        top_permutation_features = []
-        try:
-            importance_features = best_model.coef_
-            top_features = self.get_top_5_lyrics_features(importance_features)
-        except Exception as e:
-            print(e)
-
-        try:
-            importance_features = best_model.feature_importances_
-            top_features = self.get_top_5_lyrics_features(importance_features)
-        except Exception as e:
-            print(e)
-
-        try:
-            pi = permutation_importance(best_model, X, y, scoring='neg_mean_squared_error').importances_mean
-            top_permutation_features = self.get_top_5_lyrics_features(pi)
-        except Exception as e:
-            print(e)
 
         # Evaluate on the test set (final evaluation)
         final_test_rmse = root_mean_squared_error(y_test, y_pred)
@@ -197,7 +161,7 @@ class TextProcessing:
         final_test_r2 = r2_score(y_test, y_pred)
 
         # Baseline evaluation
-        baseline_predictions = [3] * len(y_test)
+        baseline_predictions = [np.mean(y_train)] * len(y_test)
         baseline_rmse = root_mean_squared_error(y_test, baseline_predictions)
         baseline_mse = mean_squared_error(y_test, baseline_predictions)
         baseline_mae = mean_absolute_error(y_test, baseline_predictions)
@@ -206,39 +170,33 @@ class TextProcessing:
         # Generating dataframe from results
         results_df = pd.DataFrame({
             'Feature': [column_to_predict],
-            'Training RMSE': [sum(train_rmses) / len(train_rmses)],
-            'Training MAE': [sum(train_maes) / len(train_maes)],
-            'Training MSE': [sum(train_mses) / len(train_mses)],
-            'Training R^2': [sum(train_r2s) / len(train_r2s)],
+            'Training RMSE': [np.mean(train_rmses)],
+            'Training MAE': [np.mean(train_maes)],
+            'Training MSE': [np.mean(train_mses)],
+            'Training R^2': [np.mean(train_r2s)],
+            'Column mean': [np.mean(y_train)],
             'Test RMSE': [final_test_rmse],
             'Baseline RMSE': [baseline_rmse],
             'RMSE dif': [baseline_rmse - final_test_rmse],
-
             'Test MAE': [final_test_mae],
             'Baseline MAE': [baseline_mae],
             'MAE dif': [baseline_mae - final_test_mae],
-
             'Test MSE': [final_test_mse],
             'Baseline MSE': [baseline_mse],
             'MSE dif': [baseline_mse - final_test_mse],
-
             'Test R^2': [final_test_r2],
             'Baseline R^2': [baseline_r2],
-            'R^2 dif': [baseline_r2 - final_test_r2],
-
-            'Top 5 Features': [top_features],
-            'Top 5 Perm. Features': [top_permutation_features]
+            'R^2 dif': [baseline_r2 - final_test_r2]
         })
 
         # Print to excel
-        model_name = type(model).__name__
-
-        # Define the path to the existing Excel file
-        excel_filename = utils.get_output_directory_path() + '/lyrics_evaluation_regressor.xlsx'
-
+        excel_filename = utils.get_output_directory_path() + f'/lyrics_{emb_mthd}_evaluation_regressor.xlsx'
         self.append_df_to_excel(excel_filename, results_df, model_name)
 
-    def evaluation_classifier(self, features_df, target_df, column_to_predict, model, param_grid, test_size=0.2):
+    def evaluation_classifier(self, features_df, target_df, column_to_predict, model, param_grid, emb_mthd,
+                              test_size=0.2):
+        model_name = type(model).__name__
+        print(f"\n\n\n ============= {model_name} - {column_to_predict} ============= \n\n\n")
 
         X = features_df  # Features
         y = target_df[column_to_predict]  # Target
@@ -247,10 +205,10 @@ class TextProcessing:
         X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=test_size, random_state=42)
 
         # Initialize KFold cross-validation (10 folds)
-        kf = KFold(n_splits=10, shuffle=True, random_state=42)
+        kf = KFold(n_splits=5, shuffle=True, random_state=42)
 
         # Find the best parameters for model
-        grid_search = GridSearchCV(estimator=model, param_grid=param_grid, cv=10)
+        grid_search = GridSearchCV(estimator=model, param_grid=param_grid, cv=kf, n_jobs=-1)
         try:
             grid_search.fit(X, y)
         except Exception as e:
@@ -264,13 +222,6 @@ class TextProcessing:
         # Perform cross-validation on the training set
         train_scores = []
         test_scores = []
-
-        # Extract the largest class name
-
-        print(column_to_predict, "\t", Counter(y))
-        most_frequent_value = y.value_counts().idxmax()
-
-        baseline_predictions = [most_frequent_value] * len(y_test)
 
         for train_index, test_index in kf.split(X_train):
             X_train_fold, X_val_fold = X_train.iloc[train_index], X_train.iloc[test_index]
@@ -293,27 +244,6 @@ class TextProcessing:
         best_model.fit(X_train, y_train)
         y_pred = best_model.predict(X_test)
 
-        # Feature importance and permutation
-        top_features = []
-        top_permutation_features = []
-        try:
-            importance_features = best_model.coef_
-            top_features = self.get_top_5_lyrics_features(importance_features)
-        except Exception as e:
-            print(e)
-
-        try:
-            importance_features = best_model.feature_importances_
-            top_features = self.get_top_5_lyrics_features(importance_features)
-        except Exception as e:
-            print(e)
-
-        try:
-            pi = permutation_importance(best_model, X, y, scoring='neg_mean_squared_error').importances_mean
-            top_permutation_features = self.get_top_5_lyrics_features(pi)
-        except Exception as e:
-            print(e)
-
         # Evaluation
         labels = ['LOW', 'MID', 'HIGH']
         accuracy = accuracy_score(y_test, y_pred)
@@ -327,6 +257,9 @@ class TextProcessing:
         mcc = matthews_corrcoef(y_test, y_pred)
 
         # Baseline evaluation
+        most_frequent_value = y.value_counts().idxmax()
+        baseline_predictions = [most_frequent_value] * len(y_test)
+
         baseline_accuracy = accuracy_score(y_test, baseline_predictions)
         baseline_precision = precision_score(y_test, baseline_predictions, average='weighted', zero_division=0)
         baseline_recall = recall_score(y_test, baseline_predictions, average='weighted')
@@ -360,13 +293,10 @@ class TextProcessing:
 
             'Confusion Matrix': [cm_table.to_string()],
 
-            'Top 5 Features': [top_features],
-            'Top 5 Perm. Features': [top_permutation_features]
         })
 
         # Print results to Excel
-        excel_filename = utils.get_output_directory_path() + '/lyrics_evaluation_classifier.xlsx'
-        model_name = type(model).__name__
+        excel_filename = utils.get_output_directory_path() + f'/lyrics_{emb_mthd}_evaluation_classifier.xlsx'
 
         self.append_df_to_excel(excel_filename, results_df, model_name)
 
@@ -381,13 +311,18 @@ class TextProcessing:
         print("Calculating TF-IDF!\n")
         tfidf_df = self.calculate_tfidf(lyrics_df)
 
+        print("Calculating Word2Vec!\n")
+        w2v = Create_Word2Vec()
+        w2v_df = w2v.run()
+        w2v_feature_df = w2v_df.drop(columns=['song_name'])
+
         # Perform dimension reduction
         print("Reducing dimensions!\n")
         full_pca_df = tfidf_df.iloc[:, 4:]  # Selecting all columns from index 4 to the end
         pca_data, pca = self.dimension_reduction(full_pca_df)
 
         # Create a Target df with the PCA data
-        features_df = pd.DataFrame(pca_data, columns=[f'PC{i + 1}' for i in range(pca_data.shape[1])])
+        pca_features_df = pd.DataFrame(pca_data, columns=[f'PC{i + 1}' for i in range(pca_data.shape[1])])
 
         # Getting columns to predict
         original_df = pd.read_excel(
@@ -421,67 +356,70 @@ class TextProcessing:
             SGDClassifier(random_state=42),
             DecisionTreeClassifier(random_state=42),
             KNeighborsClassifier()
-            # NaiveBayesClassifier()
         ]
         param_grids_regressor = [
 
             {  # RandomForestRegressor parameters
-                'n_estimators': [10, 100, 200],
-                'max_depth': [None, 10, 100, 200],
+                'n_estimators': [50, 100, 200, 300],
+                'max_depth': [None, 10, 20, 50, 100],
                 'min_samples_split': [2, 5, 10],
-                'min_samples_leaf': [1, 5, 10],
+                'min_samples_leaf': [1, 2, 5, 10],
+                'bootstrap': [True, False]
             },
             {  # GradientBoostingRegressor parameters
-                'n_estimators': [1, 100, 100, 200],
-                'learning_rate': [0.1, 1, 10],
-                'max_depth': [3, 30, 300],
-                'min_samples_split': [2, 5],
-                'min_samples_leaf': [1, 10]
+                'n_estimators': [50, 100, 200, 300],
+                'learning_rate': [0.01, 0.05, 0.1, 0.2],
+                'max_depth': [3, 5, 10, 20],
+                'min_samples_split': [2, 5, 10],
+                'min_samples_leaf': [1, 2, 5],
+                'subsample': [0.7, 0.8, 0.9, 1.0]
             },
             {  # ExtraTreesRegressor parameters
-                'n_estimators': [1, 10, 100, 200],
-                'max_depth': [None, 10, 100],
-                'min_samples_split': [2, 5],
-                'min_samples_leaf': [1, 10]
+                'n_estimators': [50, 100, 200, 300],
+                'max_depth': [None, 10, 20, 50],
+                'min_samples_split': [2, 5, 10],
+                'min_samples_leaf': [1, 2, 5, 10],
+                'bootstrap': [True, False]
             },
             {  # DecisionTreeRegressor parameters
-                'max_depth': [None, 10, 100, 200],
+                'max_depth': [None, 10, 20, 50],
                 'splitter': ['best', 'random'],
-                'min_samples_split': [2, 5],
-                'min_samples_leaf': [1, 10]
+                'min_samples_split': [2, 5, 10],
+                'min_samples_leaf': [1, 2, 5, 10]
             },
             {  # LinearRegression has no hyperparameters to tune
-                'fit_intercept': [True, False]
+                'fit_intercept': [True, False],
             },
             {  # SVR parameters
                 'kernel': ['linear', 'poly', 'rbf', 'sigmoid'],
-                'C': [0.1, 1, 10],
-                'gamma': ['scale', 'auto', 0.001, 0.01, 0.1, 1, 10],
-                'degree': [1, 10],
-                'max_iter': [-1],
+                'C': [0.1, 1, 10, 100],
+                'gamma': ['scale', 'auto', 0.001, 0.01, 0.1, 1],
+                'degree': [2, 3, 4],
+                'max_iter': [100, 1000, 5000],
                 'epsilon': [0.01, 0.1, 1]
             },
-            {  # SGD parameters
-                'loss': ['squared_error', 'huber', 'epsilon_insensitive'],
-                'penalty': [None, 'l2', 'l1', 'elasticnet'],
-                'alpha': [1, 0.1, 0.001, 0.0001, 0.00001],
+            {  # SGDRegressor parameters
+                'loss': ['squared_error', 'huber', 'epsilon_insensitive', 'squared_epsilon_insensitive'],
+                'penalty': ['l2', 'l1', 'elasticnet'],
+                'alpha': [0.0001, 0.001, 0.01, 0.1],
                 'fit_intercept': [True, False],
-                'max_iter': [100, 1000, 10000],
+                'max_iter': [1000, 5000, 10000],
                 'learning_rate': ['constant', 'optimal', 'invscaling', 'adaptive'],
-                'eta0': [0.001, 0.01, 0.1]
+                'eta0': [0.001, 0.01, 0.1],
+                'early_stopping': [True, False]
             },
             {  # Ridge parameters
-                'alpha': [0.1, 1, 10],  # Example values; you can adjust this range as needed
-                'solver': ['auto', 'svd', 'cholesky', 'lsqr', 'saga']  # Different solvers to try
+                'alpha': [0.1, 1, 10, 100],
+                'solver': ['auto', 'svd', 'cholesky', 'lsqr', 'saga']
             }
         ]
 
         param_grids_classifiers = [
             {  # SVC parameters
-                'C': [0.1, 1, 10, 100],
-                'kernel': ['linear', 'poly', 'rbf', 'sigmoid'],
-                'gamma': ['scale', 'auto', 0.001, 0.01, 0.1, 1],
-                'degree': [2, 3, 7, 13]
+                'C': [0.1, 1, 10],
+                'kernel': ['linear', 'poly', 'rbf'],
+                'gamma': ['scale', 'auto', 0.01, 0.1],
+                'degree': [2, 7, 13]
             },
             {  # RandomForestClassifier parameters
                 'n_estimators': [10, 100, 200],
@@ -523,14 +461,23 @@ class TextProcessing:
         print("Evaluating Lyrics with Regressors!\n")
         for model, param_grid in zip(regressors, param_grids_regressor):
             for column in columns_to_predict:
-                self.evaluation_regressor(features_df, target_df, column, model, param_grid)
+                for emb_method in ["word2vec", "tf-idf"]:
+                    if emb_method == "word2vec":
+                        self.evaluation_regressor(w2v_feature_df, target_df, column, model, param_grid, emb_method)
+                    else:
+                        self.evaluation_regressor(pca_features_df, target_df, column, model, param_grid, emb_method)
 
         print("Evaluating Lyrics with Classifiers!\n")
         classification_df = pd.read_excel(
-            utils.get_output_directory_path() + '/lyrics_features_classified.xlsx')  # utils.create_classifications(lyrics_features_df.copy())
+            utils.get_output_directory_path() + '/lyrics_features_classified.xlsx')
+        # utils.create_classifications(lyrics_features_df.copy(), "lyrics")
         columns_to_predict = [col for col in classification_df.columns if col.lower().endswith('class')]
         target_df = classification_df[columns_to_predict]
 
         for model, param_grid in zip(classifiers, param_grids_classifiers):
             for column in columns_to_predict:
-                self.evaluation_classifier(features_df, target_df, column, model, param_grid)
+                for emb_method in ["word2vec", "tfidf"]:
+                    if emb_method == "word2vec":
+                        self.evaluation_classifier(w2v_feature_df, target_df, column, model, param_grid, emb_method)
+                    else:
+                        self.evaluation_classifier(pca_features_df, target_df, column, model, param_grid, emb_method)

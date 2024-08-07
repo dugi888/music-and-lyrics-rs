@@ -119,7 +119,9 @@ class SpotifyClient:
                     'liveness': song_features.get('liveness'),
                     'valence': song_features.get('valence'),
                     'tempo': song_features.get('tempo'),
-                    'duration_ms': song_features.get('duration_ms')
+                    'duration_ms': song_features.get('duration_ms'),
+                    'time_signature': song_features.get('time_signature')
+
                 }
                 song_features_df.loc[len(song_features_df)] = new_row
             else:

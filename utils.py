@@ -117,13 +117,13 @@ def classify_value(x, one_third_value, two_thirds_value):
         return 'HIGH'
 
 
-def create_classifications(df):
+def create_classifications(df, caller):
     for col in df.columns:
         if col.lower() == 'songs':
             continue
         one_third_value, two_thirds_value = find_boundaries(df[col])
         df[col + '_class'] = df[col].apply(lambda x: classify_value(x, one_third_value, two_thirds_value))
 
-    output_path = get_output_directory_path() + '/lyrics_features_classified.xlsx'
-    df.to_excel(output_path, index=False)
+    output_path = get_output_directory_path() + f'/{caller}_features_classified.xlsx'
+    df.to_excel(output_path, index=True)
     return df
